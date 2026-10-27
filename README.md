@@ -4,7 +4,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61dafb.svg?logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite)](https://vitejs.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg?logo=tailwindcss)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-215%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-231%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
 [![TypeCheck](https://img.shields.io/badge/tsc-0%20errors-brightgreen.svg)](https://www.typescriptlang.org/)
 > An evidence-first research tool for the authentication paths AI-agent builders encounter: OAuth, direct credentials, and hybrid setups. It keeps provider endpoints separate from Composio callback guidance and distinguishes documented claims from hypotheses.
 
@@ -18,7 +18,7 @@ The current application is deployed from this repository to Vercel:
 |---|---|---|
 | **OAuth Readiness Copilot** | Vite interface plus same-origin Express API functions | [https://composioassignment.vercel.app](https://composioassignment.vercel.app) |
 
-The API is served by the shared `api/index.ts` Vercel function. `vercel.json` rewrites `/api/:path*` to this handler before the SPA fallback; it exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B uses a server-only `GEMINI_API_KEY` or `OPENAI_API_KEY` only when configured; otherwise it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
+The API is served by the shared `api/index.ts` Vercel function. `vercel.json` rewrites `/api/:path*` to this handler before the SPA fallback; it exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B tries server-only providers in this order: Gemini, Groq, then OpenAI; when none is configured or all fail validation, it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
 
 GitHub Actions runs the deterministic test suite and production build on pushes to `main` and pull requests. Vercel's existing Git integration remains responsible for deployment, so this workflow does not create a duplicate deploy pipeline.
 
@@ -214,7 +214,7 @@ To overcome browser CORS restrictions while safeguarding against Server-Side Req
 3. **Dual-Mode Investigator Engine (`src/agent/investigatorEngine.ts`)**:
    - **Mode 1 (Deterministic Curated Fast-Path)**: Instant (<5ms) retrieval for known curated apps without network latency.
    - **Mode 2 (Dynamic Heuristic Research)**: Analyzes unfamiliar apps and documentation URLs. Extracts authorization/token URLs, detects direct API key patterns, sets `composioManagedAuthStatus: "unknown"`, and labels unstated metrics as `unverified_hypothesis`.
-   - **Mode B (AI-Assisted Research)**: Optional server-side AI integration supporting Google Gemini (`gemini-1.5-flash`) and OpenAI (`gpt-4o-mini`). Synthesizes extracted text into strict `IntegrationReadinessGuide` JSON schemas, attaching citations to each individual claim. If API keys are absent or an API error occurs, the engine automatically falls back to Mode 2 with zero degradation.
+   - **Mode B (AI-Assisted Research)**: Optional server-side AI integration that tries Gemini (`gemini-3.8-flash`), then Groq (`openai/gpt-oss-20b` by default), then OpenAI (`gpt-4o-mini`). Gemini calls time out after four seconds; HTTP 503 skips Gemini retries. All AI output passes the `IntegrationReadinessGuide` schema and evidence checks; unsupported claims remain hypotheses, and deterministic Mode 2 is the final fallback.
 
 ---
 
@@ -261,13 +261,13 @@ The Copilot maintains complete transparency regarding what was tested live, what
 
 ---
 
-## ✅ Automated Test Suite Verification (215 Tests)
+## ✅ Automated Test Suite Verification (231 Tests)
 
-The last verification run used no provider API keys and passed **215 tests across 12 test suites**, with **0 TypeScript compilation errors**:
+The latest verification passed **231 tests across 12 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
 
 ```
 Test Files  12 passed (12)
-     Tests  215 passed (215)
+     Tests  231 passed (231)
 ```
 
 ### Test Suite Structure:
@@ -281,10 +281,10 @@ Test Files  12 passed (12)
 | 5 | `tests/unit/sanitizer.test.ts` | 25 | SSRF IP validator, CIDR matcher, URL sanitizer, protocol enforcer | ✅ PASS |
 | 6 | `tests/unit/schema.test.ts` | 17 | `IntegrationReadinessGuide` schema validation, `Traceable` wrapper invariants | ✅ PASS |
 | 7 | `tests/unit/adversarial_schema.test.ts` | 12 | Adversarial fuzzing, corrupted payloads, missing evidence kinds, malformed fields | ✅ PASS |
-| 8 | `tests/unit/investigator.test.ts` | 31 | Dual-mode investigator engine, source-matched evidence, Mode 1 fast-path, Mode 2 heuristic research, Mode B fallback | ✅ PASS |
+| 8 | `tests/unit/investigator.test.ts` | 41 | Dual-mode investigator engine, source-matched evidence, Mode 1 fast-path, Mode 2 heuristic research, Mode B fallback | ✅ PASS |
 | 9 | `tests/unit/guideValidation.test.ts` | 32 | Comprehensive schema verification across all 5 deep curated guides and edge cases | ✅ PASS |
 | 10 | `tests/unit/catalog.test.ts` | 14 | 100-app catalog distribution (50% OAuth / 25% Hybrid / 25% Direct), 10 categories (10 apps each), review gate taxonomy | ✅ PASS |
-| 11 | `tests/unit/frontendComponents.test.ts` | 7 | React component contracts: `ClaimEvidenceBadge`, `EndpointsAndCallbackBox`, `ExportEngine` | ✅ PASS |
+| 11 | `tests/unit/frontendComponents.test.ts` | 13 | React component contracts: `ClaimEvidenceBadge`, `EndpointsAndCallbackBox`, `ExportEngine` | ✅ PASS |
 | 12 | `tests/unit/proxyServer.test.ts` | 15 | Express API routes, retrieval failures, SSRF guard, evidence downgrade, and caching | ✅ PASS |
 
 ---
@@ -308,7 +308,9 @@ Copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
 ```
-*(Optional: Provide `GEMINI_API_KEY` or `OPENAI_API_KEY` to enable Mode B AI research. If omitted, the engine uses the deterministic Mode 2 engine automatically.)*
+Mode B accepts `GEMINI_API_KEY`, `GROQ_API_KEY`, and `OPENAI_API_KEY`. To use Groq as a fallback, keep Gemini configured and add a Groq key; Groq will be tried if Gemini fails. To use Groq as the primary provider, leave `GEMINI_API_KEY` unset. `GROQ_MODEL` is optional and defaults to `openai/gpt-oss-20b`.
+
+For local development, put keys in `.env` (this file is ignored by Git). For production, open the Vercel project **Settings → Environment Variables**, add `GROQ_API_KEY` with the Groq API key, select the environments you use (at minimum Production), save, and redeploy. Do not paste keys into the app, use a `VITE_` prefix, commit them, or send them in chat. If no AI provider is configured—or every provider fails—the app safely uses deterministic Mode 2.
 
 ### 4. Running the Development Server
 In one terminal, start the Express retrieval proxy backend:

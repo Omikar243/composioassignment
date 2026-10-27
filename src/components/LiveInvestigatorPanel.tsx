@@ -21,6 +21,7 @@ import { IntegrationReadinessGuide } from "../types/guide";
 import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 import { ExportEngine } from "./ExportEngine";
 import { InvestigationRationale } from "./InvestigationRationale";
+import { resolveDocumentationSourceUrl } from "../utils/investigationInput";
 
 export interface LiveInvestigatorPanelProps {
   initialAppName?: string;
@@ -75,7 +76,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
     setTerminalLogs([]);
 
     const timestamp = new Date().toISOString();
-    const isUrl = appInput.startsWith("http://") || appInput.startsWith("https://");
+    const isUrl = /^https?:\/\//i.test(appInput.trim());
     const targetName = isUrl
       ? (() => {
           try {
@@ -88,7 +89,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
           }
         })()
       : appInput.trim();
-    const targetUrl = isUrl ? appInput.trim() : urlInput.trim() || undefined;
+    const targetUrl = resolveDocumentationSourceUrl(appInput, urlInput);
 
     setTerminalLogs([
       `[${timestamp}] [TRIAGE] Initializing live investigation for '${targetName}'...`,
@@ -173,10 +174,11 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       <section className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <label htmlFor="investigator-app-input" className="block text-xs font-medium text-slate-300 mb-1.5">
               App Name or Documentation URL:
             </label>
             <input
+              id="investigator-app-input"
               type="text"
               value={appInput}
               onChange={(e) => setAppInput(e.target.value)}
@@ -186,16 +188,21 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <label htmlFor="investigator-doc-url-input" className="block text-xs font-medium text-slate-300 mb-1.5">
               Documentation URL (Optional override):
             </label>
             <input
+              id="investigator-doc-url-input"
               type="text"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               placeholder="https://docs.provider.com/api/auth"
+              aria-describedby="investigator-doc-url-help"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition"
             />
+            <p id="investigator-doc-url-help" className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+              If provided, this URL is fetched instead of a URL in the first field.
+            </p>
           </div>
         </div>
 

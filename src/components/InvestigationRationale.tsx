@@ -2,6 +2,7 @@ import React from "react";
 import { AlertTriangle, ExternalLink, Sparkles } from "lucide-react";
 import type { ClaimEvidence, IntegrationReadinessGuide } from "../types/guide";
 import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
+import { investigationEngineLabel } from "../utils/investigationRationale";
 
 export interface InvestigationRationaleProps {
   guide: IntegrationReadinessGuide;
@@ -71,8 +72,7 @@ export const InvestigationRationale: React.FC<InvestigationRationaleProps> = ({ 
   const analysis = guide.investigationAnalysis;
   if (!analysis) return null;
 
-  const engineLabel =
-    analysis.engine === "gemini_mode_b" ? "Gemini · Mode B" : "Deterministic · Mode 2";
+  const engineLabel = investigationEngineLabel(analysis.engine);
   const decisionLabel = analysis.decision.replace(/_/g, " ");
   const visibleFindings = analysis.findings.slice(0, 4);
   const remainingFindings = analysis.findings.slice(4);

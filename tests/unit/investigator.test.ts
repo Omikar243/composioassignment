@@ -18,8 +18,30 @@ import {
   assertIsolatedEndpoints,
   assertDirectCredentialOmitsOAuth,
 } from "../e2e/testHarness";
+import { resolveDocumentationSourceUrl } from "../../src/utils/investigationInput";
 
 describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () => {
+  describe("Investigator documentation URL selection", () => {
+    it("prefers a non-empty override over a URL in the primary input", () => {
+      expect(
+        resolveDocumentationSourceUrl(
+          "https://developers.openai.com/api/docs/quickstart",
+          " https://platform.openai.com/docs/api-reference/authentication "
+        )
+      ).toBe("https://platform.openai.com/docs/api-reference/authentication");
+    });
+
+    it("uses the URL-first input when no override is provided", () => {
+      expect(
+        resolveDocumentationSourceUrl(" https://developers.openai.com/api/docs/quickstart ", "  ")
+      ).toBe("https://developers.openai.com/api/docs/quickstart");
+    });
+
+    it("does not invent a source URL for a plain app-name query without an override", () => {
+      expect(resolveDocumentationSourceUrl("OpenAI", "")).toBeUndefined();
+    });
+  });
+
   describe("Mode 1: Deterministic Curated Fast-Path (<5ms)", () => {
     it("resolves canonical curated apps instantly with <5ms latency", () => {
       const known = [
@@ -281,8 +303,10 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
 
     it("bypasses retries on Gemini 503 and falls back to deterministic research", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
       process.env.GEMINI_API_KEY = "test-gemini-key";
+      delete process.env.GROQ_API_KEY;
       delete process.env.OPENAI_API_KEY;
 
       const fetchMock = vi.spyOn(globalThis, "fetch")
@@ -305,6 +329,104 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         fetchMock.mockRestore();
         if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
         else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = originalGroq;
+        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = originalOpenAI;
+      }
+    });
+
+    it("uses Groq after Gemini returns HTTP 503", async () => {
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
+      const originalOpenAI = process.env.OPENAI_API_KEY;
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      process.env.GROQ_API_KEY = "test-groq-key";
+      delete process.env.OPENAI_API_KEY;
+
+      const guide = executeMode2Dynamic({
+        appName: "Linear",
+        websiteUrl: "https://linear.app",
+        docContent: "OAuth documentation",
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "temporarily overloaded" } }), {
+          status: 503,
+          headers: { "Retry-After": "0" },
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(guide) } }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }));
+
+      try {
+        const result = await executeModeBAIAssisted({
+          appName: "Linear",
+          websiteUrl: "https://linear.app",
+          docContent: "OAuth documentation",
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls[1][0]).toBe("https://api.groq.com/openai/v1/chat/completions");
+        const requestInit = fetchMock.mock.calls[1][1] as RequestInit;
+        const requestBody = JSON.parse(String(requestInit.body));
+        expect(requestBody.model).toBe("openai/gpt-oss-20b");
+        expect(requestBody.response_format).toEqual({ type: "json_object" });
+        expect((requestInit.headers as Record<string, string>).Authorization).toBe("Bearer test-groq-key");
+        expect(result.modeUsed).toBe("ai_assisted");
+        expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
+        expect(result.logs.some((log) => log.includes("HTTP 503") && log.includes("Skipping retries"))).toBe(true);
+        expect(result.logs.some((log) => log.includes("Querying Groq API"))).toBe(true);
+        expect(result.logs.join(" ")).not.toContain("test-groq-key");
+      } finally {
+        fetchMock.mockRestore();
+        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = originalGroq;
+        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = originalOpenAI;
+      }
+    });
+
+    it("can use Groq as the only configured Mode B provider", async () => {
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
+      const originalOpenAI = process.env.OPENAI_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      process.env.GROQ_API_KEY = "test-groq-key";
+      delete process.env.OPENAI_API_KEY;
+
+      const guide = executeMode2Dynamic({
+        appName: "Linear",
+        websiteUrl: "https://linear.app",
+        docContent: "OAuth documentation",
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(guide) } }],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+
+      try {
+        const result = await executeModeBAIAssisted({
+          appName: "Linear",
+          websiteUrl: "https://linear.app",
+          docContent: "OAuth documentation",
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(result.modeUsed).toBe("ai_assisted");
+        expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
+      } finally {
+        fetchMock.mockRestore();
+        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
         else process.env.OPENAI_API_KEY = originalOpenAI;
       }
@@ -312,8 +434,10 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
 
     it("aborts a Gemini request after four seconds", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
       process.env.GEMINI_API_KEY = "test-gemini-key";
+      delete process.env.GROQ_API_KEY;
       delete process.env.OPENAI_API_KEY;
       vi.useFakeTimers();
 
@@ -358,6 +482,8 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         vi.useRealTimers();
         if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
         else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
         else process.env.OPENAI_API_KEY = originalOpenAI;
       }
@@ -365,8 +491,10 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
 
     it("retries once after a Gemini request timeout", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
       process.env.GEMINI_API_KEY = "test-gemini-key";
+      delete process.env.GROQ_API_KEY;
       delete process.env.OPENAI_API_KEY;
 
       const guide = executeMode2Dynamic({
@@ -397,6 +525,8 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         fetchMock.mockRestore();
         if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
         else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
         else process.env.OPENAI_API_KEY = originalOpenAI;
       }
@@ -404,9 +534,11 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
 
     it("gracefully falls back to deterministic research when no API keys are configured", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
 
       delete process.env.GEMINI_API_KEY;
+      delete process.env.GROQ_API_KEY;
       delete process.env.OPENAI_API_KEY;
 
       try {
@@ -423,6 +555,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(validateIntegrationReadinessGuide(result.guide).isValid).toBe(true);
       } finally {
         if (originalGemini) process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq) process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI) process.env.OPENAI_API_KEY = originalOpenAI;
       }
     });

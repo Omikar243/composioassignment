@@ -152,7 +152,7 @@ export interface InvestigationEvidenceFinding {
 }
 
 export interface InvestigationAnalysis {
-  engine: "gemini_mode_b" | "deterministic_mode2";
+  engine: "gemini_mode_b" | "groq_mode_b" | "openai_mode_b" | "deterministic_mode2";
   decision: AuthPathClassification;
   decisionSummary: string;
   findings: InvestigationEvidenceFinding[];

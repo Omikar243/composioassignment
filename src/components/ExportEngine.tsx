@@ -8,6 +8,7 @@ import {
   Share2,
 } from "lucide-react";
 import { IntegrationReadinessGuide, ClaimEvidence } from "../types/guide";
+import { investigationEngineLabel } from "../utils/investigationRationale";
 
 export interface ExportEngineProps {
   guide: IntegrationReadinessGuide;
@@ -79,7 +80,7 @@ export function generateGuideMarkdown(guide: IntegrationReadinessGuide): string 
 
   if (guide.investigationAnalysis) {
     const analysis = guide.investigationAnalysis;
-    const engineLabel = analysis.engine === "gemini_mode_b" ? "Gemini · Mode B" : "Deterministic · Mode 2";
+    const engineLabel = investigationEngineLabel(analysis.engine);
     md += `## Decision Rationale & Evidence Ledger\n\n`;
     md += `> Engine: ${engineLabel}. This concise synthesis is not source evidence or private chain-of-thought.\n\n`;
     md += `**Proposed auth path:** \`${analysis.decision}\`\n\n`;

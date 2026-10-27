@@ -975,33 +975,11 @@ export function stripPrivateReasoningFields<T>(input: T): { value: T; removedCou
 // ============================================================================
 
 const GEMINI_REQUEST_TIMEOUT_MS = 4_000;
+const COMPATIBLE_AI_REQUEST_TIMEOUT_MS = 4_000;
+type CompatibleProviderEngine = "groq_mode_b" | "openai_mode_b";
 
-export async function executeModeBAIAssisted(
-  input: DynamicInvestigationInput
-): Promise<{
-  guide: IntegrationReadinessGuide;
-  logs: string[];
-  modeUsed: "heuristic_research" | "ai_assisted";
-}> {
-  const logs: string[] = [];
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-
-  if (!geminiKey && !openaiKey) {
-    logs.push("No GEMINI_API_KEY or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
-    const guide = executeMode2Dynamic(input);
-    return { guide, logs, modeUsed: "heuristic_research" };
-  }
-
-  logs.push("AI API key detected. Initiating AI-assisted research and extraction...");
-
-  try {
-    // Attempt LLM generation if key is present
-    let rawJsonResponse: string | undefined;
-
-    if (geminiKey) {
-      logs.push("Querying Gemini API...");
-      const prompt = `Analyze this documentation for SaaS app '${input.appName}' (${input.websiteUrl || "unknown url"}):
+function buildModeBPrompt(input: DynamicInvestigationInput): string {
+  return `Analyze this documentation for SaaS app '${input.appName}' (${input.websiteUrl || "unknown url"}):
 ${input.docContent ? input.docContent.substring(0, 10000) : "No raw docs provided."}
 
 Return a valid JSON object strictly conforming to the IntegrationReadinessGuide TypeScript schema.
@@ -1013,6 +991,95 @@ Mandatory requirements:
 - Keep readinessSummary.oneLineSummary to a concise public-facing decision synthesis; state important uncertainty and do not add facts absent from the retrieved text.
 - Do not emit raw chain-of-thought or hidden internal reasoning. Return only conclusions, evidence fields, and unresolved questions required by the schema.
 Return ONLY valid JSON.`;
+}
+
+async function requestOpenAICompatibleGuide(
+  providerName: "Groq" | "OpenAI",
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  prompt: string,
+  engine: CompatibleProviderEngine,
+  logs: string[]
+): Promise<{ content: string; engine: CompatibleProviderEngine } | undefined> {
+  logs.push(`Querying ${providerName} API...`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), COMPATIBLE_AI_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an expert OAuth and Integration Readiness auditor. Follow the user's source-only evidence rules. Return a single JSON object, never raw chain-of-thought, and do not invent facts absent from the retrieved documentation.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      logs.push(`${providerName} API returned HTTP ${response.status}.`);
+      return undefined;
+    }
+
+    const payload: any = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || content.trim() === "") {
+      logs.push(`${providerName} API returned no JSON content.`);
+      return undefined;
+    }
+    return { content, engine };
+  } catch (error) {
+    const reason = error instanceof Error && error.name === "AbortError"
+      ? `timed out after ${COMPATIBLE_AI_REQUEST_TIMEOUT_MS}ms`
+      : "request failed";
+    logs.push(`${providerName} ${reason}; trying the next fallback.`);
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function executeModeBAIAssisted(
+  input: DynamicInvestigationInput
+): Promise<{
+  guide: IntegrationReadinessGuide;
+  logs: string[];
+  modeUsed: "heuristic_research" | "ai_assisted";
+}> {
+  const logs: string[] = [];
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+
+  if (!geminiKey && !groqKey && !openaiKey) {
+    logs.push("No GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
+    const guide = executeMode2Dynamic(input);
+    return { guide, logs, modeUsed: "heuristic_research" };
+  }
+
+  logs.push("AI API key detected. Initiating AI-assisted research and extraction...");
+
+  try {
+    // Attempt LLM generation if key is present
+    let rawJsonResponse: string | undefined;
+    let aiEngine: "gemini_mode_b" | CompatibleProviderEngine | undefined;
+    const prompt = buildModeBPrompt(input);
+
+    if (geminiKey) {
+      logs.push("Querying Gemini API...");
 
       const deadline = Date.now() + 20_000;
       const maxAttempts = 2;
@@ -1023,10 +1090,12 @@ Return ONLY valid JSON.`;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const remainingMs = deadline - Date.now();
         if (remainingMs <= 0) {
-          logs.push("Gemini retry budget exhausted. Falling back to deterministic engine.");
+          logs.push("Gemini request budget exhausted; moving to configured provider fallbacks.");
           break;
         }
 
+        resp = undefined;
+        responsePayload = undefined;
         const controller = new AbortController();
         const timeout = setTimeout(
           () => controller.abort(),
@@ -1050,7 +1119,10 @@ Return ONLY valid JSON.`;
           }
         } catch (error) {
           const timeLeft = deadline - Date.now();
-          if (attempt >= maxAttempts || timeLeft <= 0) throw error;
+          if (attempt >= maxAttempts || timeLeft <= 0) {
+            logs.push(`Gemini request failed on attempt ${attempt}/${maxAttempts}; moving to configured provider fallbacks.`);
+            break;
+          }
           const delayMs = Math.min(750 + Math.floor(Math.random() * 250), Math.max(0, timeLeft - 1));
           logs.push(`Gemini request failed on attempt ${attempt}/${maxAttempts}. Retrying once in ${delayMs}ms.`);
           await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
@@ -1062,7 +1134,7 @@ Return ONLY valid JSON.`;
         if (resp.ok) break;
 
         if (resp.status === 503) {
-          logs.push("Gemini API returned HTTP 503. Skipping retries and falling back to deterministic engine.");
+          logs.push("Gemini API returned HTTP 503. Skipping retries and trying configured provider fallbacks.");
           break;
         }
 
@@ -1070,7 +1142,7 @@ Return ONLY valid JSON.`;
         const retryAfter = resp.headers.get("retry-after");
         if (!retryable || attempt >= maxAttempts) {
           logs.push(
-            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""} after ${attempt} attempt(s). Falling back to deterministic engine.`
+            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""} after ${attempt} attempt(s); moving to configured provider fallbacks.`
           );
           break;
         }
@@ -1086,7 +1158,7 @@ Return ONLY valid JSON.`;
         const timeLeft = deadline - Date.now();
         if (delayMs >= timeLeft) {
           logs.push(
-            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}; no retry fits within the request budget. Falling back to deterministic engine.`
+            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}; no retry fits within the request budget, moving to configured provider fallbacks.`
           );
           break;
         }
@@ -1099,39 +1171,43 @@ Return ONLY valid JSON.`;
 
       if (resp?.ok) {
         rawJsonResponse = responsePayload?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawJsonResponse) aiEngine = "gemini_mode_b";
       } else if (!resp) {
-        logs.push("Gemini API did not return a response. Falling back to deterministic engine.");
+        logs.push("Gemini API did not return a response; trying configured provider fallbacks.");
       }
-    } else if (openaiKey) {
-      logs.push("Querying OpenAI API...");
-      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are an expert OAuth and Integration Readiness auditor. You produce valid IntegrationReadinessGuide JSON with strict epistemic honesty, zero invented facts, unstated times as unverified_hypothesis, and composioManagedAuthStatus='unknown'.",
-            },
-            {
-              role: "user",
-              content: `App: ${input.appName}\nURL: ${input.websiteUrl}\nDocs:\n${input.docContent || ""}`,
-            },
-          ],
-        }),
-      });
+    }
 
-      if (resp.ok) {
-        const json: any = await resp.json();
-        rawJsonResponse = json?.choices?.[0]?.message?.content;
-      } else {
-        logs.push(`OpenAI API returned HTTP ${resp.status}. Falling back to deterministic engine.`);
+    if (!rawJsonResponse && groqKey) {
+      const groqResult = await requestOpenAICompatibleGuide(
+        "Groq",
+        "https://api.groq.com/openai/v1/chat/completions",
+        groqKey,
+        process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+        prompt,
+        "groq_mode_b",
+        logs
+      );
+      if (groqResult) {
+        rawJsonResponse = groqResult.content;
+        aiEngine = groqResult.engine;
+      }
+    } else if (!rawJsonResponse) {
+      logs.push("GROQ_API_KEY is not configured; skipping Groq fallback.");
+    }
+
+    if (!rawJsonResponse && openaiKey) {
+      const openaiResult = await requestOpenAICompatibleGuide(
+        "OpenAI",
+        "https://api.openai.com/v1/chat/completions",
+        openaiKey,
+        "gpt-4o-mini",
+        prompt,
+        "openai_mode_b",
+        logs
+      );
+      if (openaiResult) {
+        rawJsonResponse = openaiResult.content;
+        aiEngine = openaiResult.engine;
       }
     }
 
@@ -1153,7 +1229,7 @@ Return ONLY valid JSON.`;
         }
         evidenceChecked.guide.investigationAnalysis = buildInvestigationAnalysis(
           evidenceChecked.guide,
-          "gemini_mode_b"
+          aiEngine || "gemini_mode_b"
         );
         return { guide: evidenceChecked.guide, logs, modeUsed: "ai_assisted" };
       } else {
