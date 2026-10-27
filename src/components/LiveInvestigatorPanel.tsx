@@ -20,6 +20,7 @@ import type { InvestigationResponse } from "../agent/investigatorEngine";
 import { IntegrationReadinessGuide } from "../types/guide";
 import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 import { ExportEngine } from "./ExportEngine";
+import { InvestigationRationale } from "./InvestigationRationale";
 
 export interface LiveInvestigatorPanelProps {
   initialAppName?: string;
@@ -416,6 +417,8 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
               </span>
             </div>
           </div>
+
+          <InvestigationRationale guide={investigationResult.guide} />
 
           {/* Necessity Banner */}
           <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">

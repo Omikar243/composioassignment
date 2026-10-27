@@ -17,6 +17,14 @@ export interface ExportEngineProps {
  * Format ClaimEvidence to clean inline markdown text
  */
 function formatEvidenceTag(e: ClaimEvidence): string {
+  const safeHttpUrl = (value: string) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const markdownLink = (label: string, url: string) => {
     const safeLabel = label
       .replaceAll("\\", "\\\\")
@@ -28,15 +36,17 @@ function formatEvidenceTag(e: ClaimEvidence): string {
 
   switch (e.kind) {
     case "tested_live":
-      return e.referenceUrl
-        ? markdownLink(`Tested Live: ${e.testedAt}`, e.referenceUrl)
+      return e.referenceUrl && safeHttpUrl(e.referenceUrl)
+        ? markdownLink(`Tested Live: ${e.testedAt}`, safeHttpUrl(e.referenceUrl)!)
         : `\`[Tested Live: ${e.testedAt}]\``;
     case "documented_not_tested":
-      return markdownLink(`Documented: ${e.sourceTitle}`, e.sourceUrl);
+      return safeHttpUrl(e.sourceUrl)
+        ? markdownLink(`Documented: ${e.sourceTitle}`, safeHttpUrl(e.sourceUrl)!)
+        : `\`[Documented: ${e.sourceTitle}]\``;
     case "unverified_hypothesis": {
       const tag = `\`[Hypothesis: ${e.hypothesisBasis}]\``;
-      return e.relatedSourceUrl
-        ? `${tag} (${markdownLink("Related source", e.relatedSourceUrl)})`
+      return e.relatedSourceUrl && safeHttpUrl(e.relatedSourceUrl)
+        ? `${tag} (${markdownLink("Related source", safeHttpUrl(e.relatedSourceUrl)!)})`
         : tag;
     }
   }
@@ -66,6 +76,34 @@ export function generateGuideMarkdown(guide: IntegrationReadinessGuide): string 
   md += `| **Supported Schemes** | ${guide.supportedAuthSchemes.value.join(", ")} | ${formatEvidenceTag(guide.supportedAuthSchemes.evidence)} |\n\n`;
   md += `**Readiness Banner:**\n> ${guide.readinessSummary.oauthNecessityBanner}\n\n`;
   md += `**Summary:** ${guide.readinessSummary.oneLineSummary}\n\n`;
+
+  if (guide.investigationAnalysis) {
+    const analysis = guide.investigationAnalysis;
+    const engineLabel = analysis.engine === "gemini_mode_b" ? "Gemini · Mode B" : "Deterministic · Mode 2";
+    md += `## Decision Rationale & Evidence Ledger\n\n`;
+    md += `> Engine: ${engineLabel}. This concise synthesis is not source evidence or private chain-of-thought.\n\n`;
+    md += `**Proposed auth path:** \`${analysis.decision}\`\n\n`;
+    md += `**Decision summary:** ${analysis.decisionSummary}\n\n`;
+    md += `**Evidence tally:** ${analysis.evidenceCounts.testedLive} Tested Live · ${analysis.evidenceCounts.documented} Documented · ${analysis.evidenceCounts.hypothesis} Hypothesis (among traceable guide fields).\n\n`;
+    md += `### Detailed findings\n\n`;
+    analysis.findings.forEach((finding) => {
+      md += `- **${finding.title}:** ${finding.statement} ${formatEvidenceTag(finding.evidence)}\n`;
+      if (finding.evidence.kind === "documented_not_tested") {
+        md += `  - Source statement: “${finding.evidence.whatSourceExplicitlyStates}”\n`;
+      } else if (finding.evidence.kind === "tested_live") {
+        md += `  - Performed: ${finding.evidence.whatWasPerformed}. Observed: ${finding.evidence.observedOutcome}\n`;
+      } else {
+        md += `  - Basis: ${finding.evidence.hypothesisBasis}. Still unverified: ${finding.evidence.whatRemainsUnverified}\n`;
+      }
+    });
+    if (analysis.openQuestions.length > 0) {
+      md += `\n### Still to verify\n\n`;
+      analysis.openQuestions.forEach((question) => {
+        md += `- **${question.title}:** ${question.statement} ${formatEvidenceTag(question.evidence)}\n`;
+      });
+    }
+    md += `\n`;
+  }
 
   // 2. Prerequisites
   md += `## 2. Prerequisites Checklist\n\n`;

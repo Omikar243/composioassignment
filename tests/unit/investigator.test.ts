@@ -4,6 +4,7 @@ import {
   executeMode2Dynamic,
   executeModeBAIAssisted,
   investigateApp,
+  stripPrivateReasoningFields,
   validateIntegrationReadinessGuide,
 } from "../../src/agent/investigatorEngine";
 import {
@@ -101,6 +102,13 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(guide.readinessSummary.activeSetupTime.evidence.kind).toBe("unverified_hypothesis");
         expect(guide.readinessSummary.approvalWaitTime.value).toBe("No review gate identified in the sources checked");
         expect(guide.readinessSummary.approvalWaitTime.evidence.kind).toBe("unverified_hypothesis");
+      });
+
+      it("attaches a deterministic decision summary, evidence findings, and unresolved questions", () => {
+        expect(guide.investigationAnalysis?.engine).toBe("deterministic_mode2");
+        expect(guide.investigationAnalysis?.decision).toBe("oauth_required");
+        expect(guide.investigationAnalysis?.findings.length).toBeGreaterThan(0);
+        expect(guide.investigationAnalysis?.openQuestions.length).toBeGreaterThan(0);
       });
 
       it("passes strict isolated endpoints assertion and schema validation", () => {
@@ -256,6 +264,21 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
   });
 
   describe("Mode B: AI-Assisted Research & Deterministic Fallback", () => {
+    it("strips private reasoning fields without removing the public evidence summary", () => {
+      const sanitized = stripPrivateReasoningFields({
+        analysis: "private model trace",
+        reasoning: "private model trace",
+        chain_of_thought: "private model trace",
+        investigationAnalysis: { decisionSummary: "Public evidence-linked summary" },
+        nested: { thoughts: "private model trace", keep: "retained" },
+      });
+      expect(sanitized.removedCount).toBe(4);
+      expect(sanitized.value).toEqual({
+        investigationAnalysis: { decisionSummary: "Public evidence-linked summary" },
+        nested: { keep: "retained" },
+      });
+    });
+
     it("gracefully falls back to deterministic research when no API keys are configured", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
@@ -272,6 +295,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(result.guide).toBeDefined();
         expect(result.guide.appName).toBe("Linear");
         expect(result.modeUsed).toBe("heuristic_research");
+        expect(result.guide.investigationAnalysis?.engine).toBe("deterministic_mode2");
         expect(result.logs.some((l) => l.includes("deterministic"))).toBe(true);
         expect(validateIntegrationReadinessGuide(result.guide).isValid).toBe(true);
       } finally {

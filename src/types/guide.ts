@@ -145,6 +145,25 @@ export interface BlockerPlaybookItem {
   workaroundWhilstWaiting: string;
 }
 
+export interface InvestigationEvidenceFinding {
+  title: string;
+  statement: string;
+  evidence: ClaimEvidence;
+}
+
+export interface InvestigationAnalysis {
+  engine: "gemini_mode_b" | "deterministic_mode2";
+  decision: AuthPathClassification;
+  decisionSummary: string;
+  findings: InvestigationEvidenceFinding[];
+  openQuestions: InvestigationEvidenceFinding[];
+  evidenceCounts: {
+    testedLive: number;
+    documented: number;
+    hypothesis: number;
+  };
+}
+
 // Complete Guide Contract
 export interface IntegrationReadinessGuide {
   appId: string;
@@ -174,4 +193,6 @@ export interface IntegrationReadinessGuide {
     configurationSteps: Traceable<string[]>;
     sdkSnippets: CodeSnippetSpec[];
   };
+
+  investigationAnalysis?: InvestigationAnalysis;
 }

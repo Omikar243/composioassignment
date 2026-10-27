@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateGuideMarkdown } from "../../src/components/ExportEngine";
 import { resolveProviderDocumentationUrl } from "../../src/utils/providerDocumentation";
+import { buildInvestigationAnalysis } from "../../src/utils/investigationRationale";
 import {
   curatedGuides,
   GITHUB_GUIDE,
@@ -104,6 +105,34 @@ describe("Milestone 4: Frontend Components & Export Engine Unit Tests", () => {
       expect(resolveProviderDocumentationUrl(generatedGuide)).toBe(
         "https://provider.example"
       );
+    });
+  });
+
+  describe("Evidence-linked investigation rationale", () => {
+    it("derives a decision summary, detailed findings, evidence counts, and open questions", () => {
+      const analysis = buildInvestigationAnalysis(GITHUB_GUIDE, "gemini_mode_b");
+      expect(analysis.engine).toBe("gemini_mode_b");
+      expect(analysis.decision).toBe(GITHUB_GUIDE.readinessSummary.authPathClassification);
+      expect(analysis.decisionSummary).toBe(GITHUB_GUIDE.readinessSummary.oneLineSummary);
+      expect(analysis.findings.length).toBeGreaterThan(0);
+      expect(analysis.openQuestions.length).toBeGreaterThan(0);
+      expect(
+        analysis.evidenceCounts.testedLive +
+          analysis.evidenceCounts.documented +
+          analysis.evidenceCounts.hypothesis
+      ).toBe(analysis.findings.length);
+    });
+
+    it("exports the rationale as a labeled synthesis with source-backed findings and unresolved items", () => {
+      const guide = {
+        ...GITHUB_GUIDE,
+        investigationAnalysis: buildInvestigationAnalysis(GITHUB_GUIDE, "gemini_mode_b"),
+      };
+      const markdown = generateGuideMarkdown(guide);
+      expect(markdown).toContain("## Decision Rationale & Evidence Ledger");
+      expect(markdown).toContain("not source evidence or private chain-of-thought");
+      expect(markdown).toContain("### Detailed findings");
+      expect(markdown).toContain("### Still to verify");
     });
   });
 

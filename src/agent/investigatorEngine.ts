@@ -27,6 +27,7 @@ import {
 } from "../types/guide.js";
 import { getCuratedGuide } from "../data/curatedGuides.js";
 import { sanitizeAndValidateEndpoint } from "./sanitizer.js";
+import { buildInvestigationAnalysis } from "../utils/investigationRationale.js";
 
 // ============================================================================
 // 1. Strict Schema Validation Oracle
@@ -885,7 +886,12 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     },
   };
 
-  return enforceDocumentEvidence(guide, input.docContent).guide;
+  const evidenceCheckedGuide = enforceDocumentEvidence(guide, input.docContent).guide;
+  evidenceCheckedGuide.investigationAnalysis = buildInvestigationAnalysis(
+    evidenceCheckedGuide,
+    "deterministic_mode2"
+  );
+  return evidenceCheckedGuide;
 }
 
 /**
@@ -944,6 +950,26 @@ export function enforceDocumentEvidence<T extends IntegrationReadinessGuide>(
   return { guide: visit(guide) as T, downgradedCount };
 }
 
+const privateReasoningField = /^(analysis|reasoning|thoughts?|chain[_-]?of[_-]?thought|cot|scratchpad|internal[_-]?reasoning|private[_-]?reasoning)$/i;
+
+export function stripPrivateReasoningFields<T>(input: T): { value: T; removedCount: number } {
+  let removedCount = 0;
+  const visit = (value: any): any => {
+    if (Array.isArray(value)) return value.map(visit);
+    if (!value || typeof value !== "object") return value;
+    const copy: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      if (privateReasoningField.test(key)) {
+        removedCount += 1;
+        continue;
+      }
+      copy[key] = visit(nested);
+    }
+    return copy;
+  };
+  return { value: visit(input) as T, removedCount };
+}
+
 // ============================================================================
 // 4. Mode B: AI-Assisted Research with Fallback
 // ============================================================================
@@ -982,25 +1008,38 @@ Mandatory requirements:
 - If OAuth, extract authorizationUrl and tokenUrl.
 - Set composioManagedAuthStatus value="unknown" with unverified_hypothesis evidence.
 - Any unstated setup time or wait time MUST have evidence kind="unverified_hypothesis".
+- Keep readinessSummary.oneLineSummary to a concise public-facing decision synthesis; state important uncertainty and do not add facts absent from the retrieved text.
+- Do not emit raw chain-of-thought or hidden internal reasoning. Return only conclusions, evidence fields, and unresolved questions required by the schema.
 Return ONLY valid JSON.`;
 
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
-        {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      let resp: Response;
+      try {
+        resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+          {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json" },
           }),
-        }
-      );
+          }
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (resp.ok) {
         const json: any = await resp.json();
         rawJsonResponse = json?.candidates?.[0]?.content?.parts?.[0]?.text;
       } else {
-        logs.push(`Gemini API returned HTTP ${resp.status}. Falling back to deterministic engine.`);
+        const retryAfter = resp.headers.get("retry-after");
+        logs.push(
+          `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}. Falling back to deterministic engine.`
+        );
       }
     } else if (openaiKey) {
       logs.push("Querying OpenAI API...");
@@ -1037,8 +1076,12 @@ Return ONLY valid JSON.`;
 
     if (rawJsonResponse) {
       const parsed = JSON.parse(rawJsonResponse);
+      const reasoningSanitized = stripPrivateReasoningFields(parsed);
+      if (reasoningSanitized.removedCount > 0) {
+        logs.push(`[PRIVACY] Removed ${reasoningSanitized.removedCount} model reasoning field(s); only the concise evidence-linked summary is exposed.`);
+      }
       const evidenceChecked = enforceDocumentEvidence(
-        parsed as IntegrationReadinessGuide,
+        reasoningSanitized.value as IntegrationReadinessGuide,
         input.docContent
       );
       const validation = validateIntegrationReadinessGuide(evidenceChecked.guide);
@@ -1047,6 +1090,10 @@ Return ONLY valid JSON.`;
         if (evidenceChecked.downgradedCount > 0) {
           logs.push(`[EVIDENCE] ${evidenceChecked.downgradedCount} unsupported or unperformed evidence claims were downgraded to Hypothesis.`);
         }
+        evidenceChecked.guide.investigationAnalysis = buildInvestigationAnalysis(
+          evidenceChecked.guide,
+          "gemini_mode_b"
+        );
         return { guide: evidenceChecked.guide, logs, modeUsed: "ai_assisted" };
       } else {
         logs.push(`AI generated payload failed schema validation (${validation.errors.length} errors). Falling back.`);

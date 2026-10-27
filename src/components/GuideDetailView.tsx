@@ -28,6 +28,7 @@ import { EndpointsAndCallbackBox } from "./EndpointsAndCallbackBox";
 import { CodeSnippetSpec } from "./CodeSnippetSpec";
 import { ExportEngine } from "./ExportEngine";
 import { resolveProviderDocumentationUrl } from "../utils/providerDocumentation";
+import { InvestigationRationale } from "./InvestigationRationale";
 
 export interface GuideDetailViewProps {
   guide: IntegrationReadinessGuide;
@@ -228,8 +229,10 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
               Verified auth protocols
             </div>
           </div>
-        </div>
-      </section>
+          </div>
+        </section>
+
+      {guide.investigationAnalysis && <InvestigationRationale guide={guide} />}
 
       {/* ==================================================================== */}
       {/* 3. PREREQUISITES CHECKLIST                                           */}
@@ -615,11 +618,11 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
               )}
             </div>
           ))}
-        </div>
-      </section>
+          </div>
+        </section>
 
       {/* ==================================================================== */}
-      {/* 6. BLOCKERS & TROUBLESHOOTING PLAYBOOKS                             */}
+      {/* 3. PREREQUISITES CHECKLIST                                           */}
       {/* ==================================================================== */}
       {blockerList.length > 0 && (
         <section className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
