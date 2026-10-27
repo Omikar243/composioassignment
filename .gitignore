@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Production Build Output
+dist/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# Internal Teamwork Agent Logs & Scratchpads
+.agents/teamwork/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db

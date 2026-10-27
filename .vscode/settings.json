@@ -1,0 +1,12 @@
+{
+  "mcp.servers": {
+    "manus-mcp": {
+      "command": "npx",
+      "args": ["manus-mcp"],
+      "env": {
+        "MANUS_MCP_API_KEY": "sk-jM4B-C68SeWxZbt9W1o-cFSFkgzlvqNY140-uQqAIVjL73vQkljnDcJWqXWCYNU-7Skh_lA4nEQt7gkj8y62ylGzuC3E"
+      }
+    }
+  }
+}
+
