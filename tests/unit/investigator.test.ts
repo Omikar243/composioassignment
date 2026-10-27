@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import {
   executeMode1Curated,
   executeMode2Dynamic,
@@ -277,6 +277,48 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         investigationAnalysis: { decisionSummary: "Public evidence-linked summary" },
         nested: { keep: "retained" },
       });
+    });
+
+    it("retries a transient Gemini 503 once and accepts a recovered response", async () => {
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalOpenAI = process.env.OPENAI_API_KEY;
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      delete process.env.OPENAI_API_KEY;
+
+      const guide = executeMode2Dynamic({
+        appName: "Linear",
+        websiteUrl: "https://linear.app",
+        docContent: "OAuth documentation",
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "temporarily overloaded" } }), {
+          status: 503,
+          headers: { "Retry-After": "0" },
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(guide) }] } }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }));
+
+      try {
+        const result = await executeModeBAIAssisted({
+          appName: "Linear",
+          websiteUrl: "https://linear.app",
+          docContent: "OAuth documentation",
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(result.modeUsed).toBe("ai_assisted");
+        expect(result.logs.some((log) => log.includes("Retrying once"))).toBe(true);
+      } finally {
+        fetchMock.mockRestore();
+        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = originalOpenAI;
+      }
     });
 
     it("gracefully falls back to deterministic research when no API keys are configured", async () => {

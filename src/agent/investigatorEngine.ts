@@ -1012,34 +1012,81 @@ Mandatory requirements:
 - Do not emit raw chain-of-thought or hidden internal reasoning. Return only conclusions, evidence fields, and unresolved questions required by the schema.
 Return ONLY valid JSON.`;
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20_000);
-      let resp: Response;
-      try {
-        resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
-          {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json" },
-          }),
-          }
+      const deadline = Date.now() + 20_000;
+      const maxAttempts = 2;
+      let resp: Response | undefined;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          logs.push("Gemini retry budget exhausted. Falling back to deterministic engine.");
+          break;
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), remainingMs);
+        try {
+          resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: "application/json" },
+              }),
+            }
+          );
+        } catch (error) {
+          const timeLeft = deadline - Date.now();
+          if (attempt >= maxAttempts || timeLeft <= 0) throw error;
+          const delayMs = Math.min(750 + Math.floor(Math.random() * 250), Math.max(0, timeLeft - 1));
+          logs.push(`Gemini request failed on attempt ${attempt}/${maxAttempts}. Retrying once in ${delayMs}ms.`);
+          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        } finally {
+          clearTimeout(timeout);
+        }
+
+        if (resp.ok) break;
+
+        const retryable = [408, 429, 500, 502, 503, 504].includes(resp.status);
+        const retryAfter = resp.headers.get("retry-after");
+        if (!retryable || attempt >= maxAttempts) {
+          logs.push(
+            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""} after ${attempt} attempt(s). Falling back to deterministic engine.`
+          );
+          break;
+        }
+
+        const retryAfterSeconds = Number(retryAfter);
+        const retryAfterDate = retryAfter ? Date.parse(retryAfter) : Number.NaN;
+        const advisedDelayMs = retryAfter && Number.isFinite(retryAfterSeconds)
+          ? Math.max(0, retryAfterSeconds * 1000)
+          : retryAfter && Number.isFinite(retryAfterDate)
+            ? Math.max(0, retryAfterDate - Date.now())
+            : 750;
+        const delayMs = advisedDelayMs + Math.floor(Math.random() * 250);
+        const timeLeft = deadline - Date.now();
+        if (delayMs >= timeLeft) {
+          logs.push(
+            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}; no retry fits within the request budget. Falling back to deterministic engine.`
+          );
+          break;
+        }
+
+        logs.push(
+          `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}. Retrying once in ${delayMs}ms.`
         );
-      } finally {
-        clearTimeout(timeout);
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       }
 
-      if (resp.ok) {
+      if (resp?.ok) {
         const json: any = await resp.json();
         rawJsonResponse = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-      } else {
-        const retryAfter = resp.headers.get("retry-after");
-        logs.push(
-          `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}. Falling back to deterministic engine.`
-        );
+      } else if (!resp) {
+        logs.push("Gemini API did not return a response. Falling back to deterministic engine.");
       }
     } else if (openaiKey) {
       logs.push("Querying OpenAI API...");
