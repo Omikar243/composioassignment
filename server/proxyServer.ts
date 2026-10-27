@@ -13,12 +13,12 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import * as cheerio from "cheerio";
 import TurndownService from "turndown";
-import { validateSsrfTarget } from "../src/agent/sanitizer";
+import { validateSsrfTarget } from "../src/agent/sanitizer.js";
 import {
   enforceDocumentEvidence,
   investigateApp,
   validateIntegrationReadinessGuide,
-} from "../src/agent/investigatorEngine";
+} from "../src/agent/investigatorEngine.js";
 
 export const app = express();
 

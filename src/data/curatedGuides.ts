@@ -7,7 +7,7 @@
  * as tested_live, documented_not_tested, or unverified_hypothesis.
  */
 
-import { IntegrationReadinessGuide } from "../types/guide";
+import { IntegrationReadinessGuide } from "../types/guide.js";
 
 export const GITHUB_GUIDE: IntegrationReadinessGuide = {
   appId: "github",
@@ -2175,4 +2175,3 @@ export function getCuratedGuide(appId: string): IntegrationReadinessGuide | unde
   }
   return undefined;
 }
-

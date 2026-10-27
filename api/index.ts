@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { app } from "../server/proxyServer";
+import { app } from "../server/proxyServer.js";
 
 const API_ROUTES: Record<string, string> = {
   health: "/api/health",

@@ -24,9 +24,9 @@ import {
   BlockerPlaybookItem,
   PrerequisiteItem,
   CodeSnippetSpec,
-} from "../types/guide";
-import { getCuratedGuide } from "../data/curatedGuides";
-import { sanitizeAndValidateEndpoint } from "./sanitizer";
+} from "../types/guide.js";
+import { getCuratedGuide } from "../data/curatedGuides.js";
+import { sanitizeAndValidateEndpoint } from "./sanitizer.js";
 
 // ============================================================================
 // 1. Strict Schema Validation Oracle
