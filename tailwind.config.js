@@ -7,8 +7,12 @@ export default {
   darkMode: "class",
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["DM Sans", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
       colors: {
-        canvas: "#090D16",
+        canvas: "var(--bg-canvas)",
         surface: {
           glass: "rgba(15, 23, 42, 0.65)",
           hover: "rgba(30, 41, 59, 0.75)",

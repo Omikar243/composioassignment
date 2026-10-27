@@ -420,13 +420,13 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const approvalWaitTime: Traceable<string> =
     authPath === "direct_credential_only"
       ? {
-          value: "Not Applicable — Direct API Key, no provider review gate",
+          value: "Unknown — no provider review gate was verified for this credential path",
           evidence: {
-            kind: "documented_not_tested",
-            sourceTitle: `${name} API Authentication Docs`,
-            sourceUrl: canonicalUrl,
-            whatSourceExplicitlyStates:
-              "API keys are generated directly inside the developer dashboard without a review queue.",
+            kind: "unverified_hypothesis",
+            hypothesisBasis:
+              "A direct credential path may avoid OAuth application review, but no provider-specific review gate was verified for this generated guide.",
+            whatRemainsUnverified:
+              "Whether account approval, API enablement, workspace policy, or usage-tier limits add a review step.",
           },
         }
       : {
@@ -804,9 +804,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       activeSetupTime,
       approvalWaitTime,
       oneLineSummary:
-        authPath === "direct_credential_only"
-          ? `Direct API key authentication for ${name}; zero OAuth endpoints or review gates required.`
-          : `${name} integration readiness guide with isolated provider endpoints and Composio callback instructions.`,
+        `Heuristic ${authPath.replace(/_/g, " ")} classification for ${name}; verify auth support, endpoints, and provider review requirements against current documentation.`,
     },
     prerequisites: {
       value: [
@@ -887,7 +885,63 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     },
   };
 
-  return guide;
+  return enforceDocumentEvidence(guide, input.docContent).guide;
+}
+
+/**
+ * Generated investigators cannot independently prove a claim by attaching a URL.
+ * Retain a Documented label only when its exact statement appears in trusted
+ * source text; generated output can never claim a live test that was not run.
+ */
+export function enforceDocumentEvidence<T extends IntegrationReadinessGuide>(
+  guide: T,
+  trustedSourceText?: string
+): { guide: T; downgradedCount: number } {
+  const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+  const normalizedSource = normalize(trustedSourceText || "");
+  let downgradedCount = 0;
+
+  const visit = (value: any): any => {
+    if (Array.isArray(value)) return value.map(visit);
+    if (!value || typeof value !== "object") return value;
+
+    if (value.kind === "tested_live") {
+      downgradedCount += 1;
+      return {
+        kind: "unverified_hypothesis",
+        hypothesisBasis: "This generated response did not execute a provider-portal or runtime test; the supplied live-test label was not independently performed.",
+        whatRemainsUnverified: "No live action or observed outcome was recorded for this generated claim.",
+        ...(typeof value.referenceUrl === "string" ? { relatedSourceUrl: value.referenceUrl } : {}),
+      };
+    }
+
+    if (value.kind === "documented_not_tested") {
+      const statement = typeof value.whatSourceExplicitlyStates === "string"
+        ? normalize(value.whatSourceExplicitlyStates)
+        : "";
+      if (statement.length >= 16 && normalizedSource.includes(statement)) return value;
+
+      downgradedCount += 1;
+      const basis = normalizedSource
+        ? "The generated quote was not found verbatim in the trusted documentation retrieved for this request."
+        : "No trusted provider documentation was retrieved for this generated claim.";
+      const unverified = statement
+        ? `The source text did not substantiate: “${statement.slice(0, 180)}”. Verify the claim in the provider's current documentation.`
+        : "The provider's current documentation has not been shown to support this claim.";
+      return {
+        kind: "unverified_hypothesis",
+        hypothesisBasis: basis,
+        whatRemainsUnverified: unverified,
+        ...(typeof value.sourceUrl === "string" ? { relatedSourceUrl: value.sourceUrl } : {}),
+      };
+    }
+
+    const copy: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) copy[key] = visit(nested);
+    return copy;
+  };
+
+  return { guide: visit(guide) as T, downgradedCount };
 }
 
 // ============================================================================
@@ -896,7 +950,11 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
 
 export async function executeModeBAIAssisted(
   input: DynamicInvestigationInput
-): Promise<{ guide: IntegrationReadinessGuide; logs: string[] }> {
+): Promise<{
+  guide: IntegrationReadinessGuide;
+  logs: string[];
+  modeUsed: "heuristic_research" | "ai_assisted";
+}> {
   const logs: string[] = [];
   const geminiKey = process.env.GEMINI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -904,7 +962,7 @@ export async function executeModeBAIAssisted(
   if (!geminiKey && !openaiKey) {
     logs.push("No GEMINI_API_KEY or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
     const guide = executeMode2Dynamic(input);
-    return { guide, logs };
+    return { guide, logs, modeUsed: "heuristic_research" };
   }
 
   logs.push("AI API key detected. Initiating AI-assisted research and extraction...");
@@ -979,10 +1037,17 @@ Return ONLY valid JSON.`;
 
     if (rawJsonResponse) {
       const parsed = JSON.parse(rawJsonResponse);
-      const validation = validateIntegrationReadinessGuide(parsed);
+      const evidenceChecked = enforceDocumentEvidence(
+        parsed as IntegrationReadinessGuide,
+        input.docContent
+      );
+      const validation = validateIntegrationReadinessGuide(evidenceChecked.guide);
       if (validation.isValid) {
-        logs.push("AI-assisted guide successfully validated against IntegrationReadinessGuide schema.");
-        return { guide: parsed as IntegrationReadinessGuide, logs };
+        logs.push("AI-assisted guide validated against IntegrationReadinessGuide schema.");
+        if (evidenceChecked.downgradedCount > 0) {
+          logs.push(`[EVIDENCE] ${evidenceChecked.downgradedCount} unsupported or unperformed evidence claims were downgraded to Hypothesis.`);
+        }
+        return { guide: evidenceChecked.guide, logs, modeUsed: "ai_assisted" };
       } else {
         logs.push(`AI generated payload failed schema validation (${validation.errors.length} errors). Falling back.`);
       }
@@ -994,7 +1059,7 @@ Return ONLY valid JSON.`;
   // Fallback
   logs.push("Completed deterministic heuristic fallback.");
   const fallbackGuide = executeMode2Dynamic(input);
-  return { guide: fallbackGuide, logs };
+  return { guide: fallbackGuide, logs, modeUsed: "heuristic_research" };
 }
 
 // ============================================================================
@@ -1043,7 +1108,7 @@ export async function investigateApp(req: InvestigationRequest): Promise<Investi
       docContent: req.docContent,
     });
     logs.push(...result.logs);
-    return { guide: result.guide, modeUsed: "ai_assisted", logs };
+    return { guide: result.guide, modeUsed: result.modeUsed, logs };
   }
 
   // Phase 3: Mode 2 Dynamic Heuristic Research

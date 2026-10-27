@@ -16,10 +16,7 @@ import {
   Key,
   Clock,
 } from "lucide-react";
-import {
-  investigateApp,
-  InvestigationResponse,
-} from "../agent/investigatorEngine";
+import type { InvestigationResponse } from "../agent/investigatorEngine";
 import { IntegrationReadinessGuide } from "../types/guide";
 import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 import { ExportEngine } from "./ExportEngine";
@@ -42,11 +39,25 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [investigationResult, setInvestigationResult] = useState<InvestigationResponse | null>(null);
   const [activeStep, setActiveStep] = useState<string>("IDLE");
+  const [proxyStatus, setProxyStatus] = useState<"checking" | "online" | "offline">("checking");
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/health")
+      .then((response) => {
+        if (!response.ok) throw new Error(`Proxy health returned HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(() => { if (active) setProxyStatus("online"); })
+      .catch(() => { if (active) setProxyStatus("offline"); });
+    return () => { active = false; };
+  }, []);
 
   // Auto-scroll terminal logs
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    logsEndRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
   }, [terminalLogs]);
 
   // Handle presets
@@ -64,12 +75,24 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
 
     const timestamp = new Date().toISOString();
     const isUrl = appInput.startsWith("http://") || appInput.startsWith("https://");
-    const targetName = isUrl ? "Target Provider" : appInput.trim();
+    const targetName = isUrl
+      ? (() => {
+          try {
+            const labels = new URL(appInput.trim()).hostname.toLowerCase().replace(/^www\./, "").split(".");
+            const compoundSuffix = labels.length >= 3 && ["co", "com", "org", "net"].includes(labels[labels.length - 2]) && labels[labels.length - 1].length === 2;
+            const brand = labels[Math.max(0, labels.length - (compoundSuffix ? 3 : 2))] || "provider";
+            return brand.charAt(0).toUpperCase() + brand.slice(1);
+          } catch {
+            return "Target Provider";
+          }
+        })()
+      : appInput.trim();
     const targetUrl = isUrl ? appInput.trim() : urlInput.trim() || undefined;
 
     setTerminalLogs([
       `[${timestamp}] [TRIAGE] Initializing live investigation for '${targetName}'...`,
       `[${timestamp}] [TRIAGE] Input classification: ${isUrl ? "URL-first query" : "App-name query"}`,
+      `[${timestamp}] [TRIAGE] Requested mode: ${mode === "ai_assisted" ? "Mode B (optional AI)" : "Mode 2 (deterministic heuristic)"}`,
     ]);
 
     setActiveStep("ANALYZING");
@@ -84,13 +107,22 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
         setActiveStep("FETCHING");
       }
 
-      // Step 2: Run Investigator Engine
-      setActiveStep("SYNTHESIZING");
-      const res = await investigateApp({
-        appName: targetName,
-        websiteUrl: targetUrl,
-        mode,
+      // Step 2: Run the investigator on the server, not in the browser.
+      setActiveStep(targetUrl ? "FETCHING" : "ANALYZING");
+      setTerminalLogs((prev) => [
+        ...prev,
+        `[${new Date().toISOString()}] [PROXY] Sending request to same-origin /api/investigate...`,
+      ]);
+      const response = await fetch("/api/investigate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appName: targetName, websiteUrl: targetUrl, mode }),
       });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Investigation API returned HTTP ${response.status}`);
+      }
+      const res = payload as InvestigationResponse;
 
       // Stream logs
       const combinedLogs = [...res.logs];
@@ -121,17 +153,18 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="investigator-page space-y-8 pb-16">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2">
           <Terminal className="w-5 h-5 text-cyan-400" />
-          <h1 className="text-2xl font-bold text-white">Live Investigator Agent</h1>
+          <h1 className="text-2xl font-bold text-white">Live Investigation Desk</h1>
+          <span className={`api-health ${proxyStatus === "online" ? "is-online" : proxyStatus === "offline" ? "is-offline" : ""}`}>
+            {proxyStatus === "online" ? "Proxy online" : proxyStatus === "offline" ? "Proxy unavailable" : "Checking proxy"}
+          </span>
         </div>
         <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
-          Dynamic research engine for unfamiliar integrations. Classifies authentication
-          pathway, extracts endpoints, checks Composio managed auth, and tags all claims
-          with strict epistemic evidence.
+          Fetches provider pages through the server-side proxy when reachable, checks common auth patterns, and keeps unsupported claims marked as hypotheses. Composio-managed auth remains unknown unless independently verified.
         </p>
       </div>
 
@@ -230,6 +263,12 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
             </div>
           </div>
 
+          {mode === "ai_assisted" && (
+            <p className="mode-note w-full">
+              Mode B uses a server-side provider key only when configured. Without one, the response is explicitly labeled as a deterministic Mode 2 fallback.
+            </p>
+          )}
+
           <button
             onClick={handleRunInvestigation}
             disabled={isRunning || !appInput.trim()}
@@ -250,7 +289,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
         </div>
       </section>
 
-      {/* Real-time Terminal Progress Stream */}
+      {/* Investigation Activity Log */}
       <section className="rounded-2xl glass-card overflow-hidden border border-slate-800 shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -260,7 +299,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
               <div className="w-3 h-3 rounded-full bg-emerald-500/70" />
             </div>
             <span className="font-mono text-xs font-semibold text-slate-300 ml-2">
-              investigator-stream :: stdout
+              investigation-activity :: server response
             </span>
           </div>
 
@@ -283,7 +322,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
         </div>
 
         {/* Terminal Content */}
-        <div className="p-4 bg-black/95 font-mono text-xs min-h-[220px] max-h-[360px] overflow-y-auto space-y-1.5 text-slate-300">
+        <div className="p-4 bg-black/95 font-mono text-xs min-h-[220px] max-h-[360px] overflow-y-auto space-y-1.5 text-slate-300" role="log" aria-live="polite" aria-label="Investigation progress log">
           {terminalLogs.length === 0 ? (
             <div className="text-slate-600 italic py-8 text-center">
               Awaiting app name or URL input to initiate research stream...
@@ -316,7 +355,13 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
               <p className="text-xs text-slate-400 mt-1">
                 Resolved via{" "}
                 <span className="font-mono text-cyan-300">
-                  {investigationResult.modeUsed}
+                  {investigationResult.modeUsed === "curated_fast_path"
+                    ? "Mode 1 · curated fast path"
+                    : investigationResult.modeUsed === "ai_assisted"
+                    ? "Mode B · AI-assisted"
+                    : mode === "ai_assisted"
+                    ? "Mode B request · deterministic fallback"
+                    : "Mode 2 · heuristic research"}
                 </span>{" "}
                 with strict schema enforcement.
               </p>

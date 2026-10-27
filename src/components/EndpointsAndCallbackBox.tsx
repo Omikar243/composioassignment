@@ -59,7 +59,7 @@ export const EndpointsAndCallbackBox: React.FC<EndpointsAndCallbackBoxProps> = (
         {/* ==================================================================== */}
         {/* ZONE A: PROVIDER OAUTH ENDPOINTS (Purple Accent)                    */}
         {/* ==================================================================== */}
-        <div className="rounded-xl p-5 bg-gradient-to-b from-purple-950/30 to-purple-950/10 border border-purple-500/30 shadow-purple-glow flex flex-col justify-between">
+        <div className="endpoint-zone endpoint-provider rounded-xl p-5 bg-gradient-to-b from-purple-950/30 to-purple-950/10 border border-purple-500/30 shadow-purple-glow flex flex-col justify-between">
           <div>
             {/* Zone A Header */}
             <div className="flex items-center justify-between pb-3 border-b border-purple-800/40 mb-4">
@@ -232,7 +232,7 @@ export const EndpointsAndCallbackBox: React.FC<EndpointsAndCallbackBoxProps> = (
         {/* ==================================================================== */}
         {/* ZONE B: COMPOSIO CALLBACK GUIDANCE (Cyan Accent)                     */}
         {/* ==================================================================== */}
-        <div className="rounded-xl p-5 bg-gradient-to-b from-cyan-950/30 to-cyan-950/10 border border-cyan-500/30 shadow-cyan-glow flex flex-col justify-between">
+        <div className="endpoint-zone endpoint-composio rounded-xl p-5 bg-gradient-to-b from-cyan-950/30 to-cyan-950/10 border border-cyan-500/30 shadow-cyan-glow flex flex-col justify-between">
           <div>
             {/* Zone B Header */}
             <div className="flex items-center justify-between pb-3 border-b border-cyan-800/40 mb-4">

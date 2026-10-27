@@ -179,9 +179,9 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         assertDirectCredentialOmitsOAuth(guide);
       });
 
-      it("states approval wait time is not applicable with documented_not_tested evidence", () => {
-        expect(guide.readinessSummary.approvalWaitTime.value).toContain("Not Applicable — Direct API Key");
-        expect(guide.readinessSummary.approvalWaitTime.evidence.kind).toBe("documented_not_tested");
+      it("keeps unverified direct-credential review gates explicitly unknown", () => {
+        expect(guide.readinessSummary.approvalWaitTime.value).toContain("Unknown");
+        expect(guide.readinessSummary.approvalWaitTime.evidence.kind).toBe("unverified_hypothesis");
       });
 
       it("conforms strictly to IntegrationReadinessGuide schema", () => {
@@ -271,6 +271,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
 
         expect(result.guide).toBeDefined();
         expect(result.guide.appName).toBe("Linear");
+        expect(result.modeUsed).toBe("heuristic_research");
         expect(result.logs.some((l) => l.includes("deterministic"))).toBe(true);
         expect(validateIntegrationReadinessGuide(result.guide).isValid).toBe(true);
       } finally {
@@ -293,6 +294,18 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
       expect(res.modeUsed).toBe("heuristic_research");
       expect(res.guide.appName).toBe("Linear");
       expect(res.guide.composioManagedAuthStatus.value).toBe("unknown");
+      expect((res.guide.authSpec as OAuthProtocolSpec).providerEndpoints.authorizationUrl.evidence.kind)
+        .toBe("unverified_hypothesis");
+    });
+
+    it("retains Documented only when the exact claim is present in supplied source text", async () => {
+      const res = await investigateApp({
+        appName: "Linear",
+        websiteUrl: "https://linear.app",
+        docContent: "Authorization endpoint: https://linear.app/oauth/authorize",
+      });
+      expect((res.guide.authSpec as OAuthProtocolSpec).providerEndpoints.authorizationUrl.evidence.kind)
+        .toBe("documented_not_tested");
     });
 
     it("supports forceMode='dynamic_only' to bypass curated fast-path", async () => {

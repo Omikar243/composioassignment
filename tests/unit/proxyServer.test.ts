@@ -209,7 +209,7 @@ describe("Milestone 2: Server Retrieval Proxy Suite", () => {
       const { req, res, getStatus, getJson } = createMockReqRes({
         body: {
           appName: "Linear",
-          websiteUrl: "https://linear.app",
+          docContent: "Linear developer documentation fixture for deterministic investigator tests.",
         },
       });
       await handleInvestigate(req, res);
@@ -228,7 +228,7 @@ describe("Milestone 2: Server Retrieval Proxy Suite", () => {
       const { req, res, getStatus, getJson } = createMockReqRes({
         body: {
           appName: "Resend",
-          websiteUrl: "https://resend.com",
+          docContent: "Resend developer documentation fixture for deterministic investigator tests.",
         },
       });
       await handleInvestigate(req, res);
@@ -247,7 +247,7 @@ describe("Milestone 2: Server Retrieval Proxy Suite", () => {
       const { req, res, getStatus, getJson } = createMockReqRes({
         body: {
           appName: "HubSpot",
-          websiteUrl: "https://hubspot.com",
+          docContent: "HubSpot developer documentation fixture for deterministic investigator tests.",
         },
       });
       await handleInvestigate(req, res);
@@ -264,7 +264,7 @@ describe("Milestone 2: Server Retrieval Proxy Suite", () => {
       const { req, res, getStatus, getJson } = createMockReqRes({
         body: {
           appName: "Calendly",
-          websiteUrl: "https://developer.calendly.com",
+          docContent: "Calendly developer documentation fixture for deterministic investigator tests.",
         },
       });
       await handleInvestigate(req, res);
@@ -276,6 +276,19 @@ describe("Milestone 2: Server Retrieval Proxy Suite", () => {
       expect(data.guide.appName).toBe("Calendly");
       expect(data.guide.readinessSummary.authPathClassification).toBe("oauth_required");
       expect(data.guide.authSpec.providerEndpoints.authorizationUrl.value).toBe("https://auth.calendly.com/oauth/authorize");
+    });
+
+    it("discloses a blocked live retrieval and downgrades unsupported evidence", async () => {
+      const { req, res, getStatus, getJson } = createMockReqRes({
+        body: { appName: "Linear", websiteUrl: "http://127.0.0.1" },
+      });
+      await handleInvestigate(req, res);
+
+      expect(getStatus()).toBe(200);
+      const data = getJson();
+      expect(data.logs.some((line: string) => line.includes("Live documentation retrieval failed"))).toBe(true);
+      expect(data.logs.some((line: string) => line.includes("will remain Hypothesis"))).toBe(true);
+      expect(data.guide.authSpec.providerEndpoints.authorizationUrl.evidence.kind).toBe("unverified_hypothesis");
     });
   });
 });

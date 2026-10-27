@@ -62,7 +62,7 @@ export const VerificationAuditView: React.FC = () => {
   }, [selectedPlatform]);
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="audit-page space-y-8 pb-16">
       {/* View Header */}
       <div>
         <div className="flex items-center gap-2">

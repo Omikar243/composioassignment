@@ -77,7 +77,7 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
   const authMode = guide.authSpec.mode;
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="guide-detail-page space-y-8 pb-16">
       {/* ==================================================================== */}
       {/* 1. TOP BREADCRUMB & ACTIONS                                          */}
       {/* ==================================================================== */}

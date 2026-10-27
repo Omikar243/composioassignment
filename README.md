@@ -1,27 +1,24 @@
-# APM Integrations — OAuth Readiness Copilot
+# Auth / Copilot — OAuth Readiness Copilot
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.3-61dafb.svg?logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite)](https://vitejs.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg?logo=tailwindcss)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-213%20Passed-success.svg?logo=vitest)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-215%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
 [![TypeCheck](https://img.shields.io/badge/tsc-0%20errors-brightgreen.svg)](https://www.typescriptlang.org/)
-[![Status](https://img.shields.io/badge/Production-Ready-emerald.svg)]()
-
-> **The definitive developer copilot for connecting AI agents to third-party SaaS apps via Composio.**  
-> Eliminates integration guesswork by decoupling provider OAuth endpoints from redirect callbacks, enforcing a 3-tier epistemic evidence standard, indexing 100 real agent integrations across 10 categories, and powering a real-time retrieval proxy with dual-mode dynamic investigation.
+> An evidence-first research tool for the authentication paths AI-agent builders encounter: OAuth, direct credentials, and hybrid setups. It keeps provider endpoints separate from Composio callback guidance and distinguishes documented claims from hypotheses.
 
 ---
 
-## 🌐 Live Manus Deployments
+## 🌐 Live Vercel Deployment
 
-Experience the live interactive web applications generated and deployed autonomously via Manus MCP:
+The current application is deployed from this repository to Vercel:
 
-| Deployment | Focus | Shareable Interactive URL |
+| Deployment | Focus | Shareable URL |
 |---|---|---|
-| **Primary Live Copilot App (User-Verified)** | Full interactive experience: 100-app catalog, live investigator, isolated endpoints, forensic audit | [https://manus.im/share/bwmfLu4VLWNyEnpEFWX8E6?replay=1](https://manus.im/share/bwmfLu4VLWNyEnpEFWX8E6?replay=1) |
-| **Task 1: Core Webapp & Triage** | Frontend UI, modern glassmorphism design system, directory index, curated guides | [https://manus.im/share/2EL46n4hLbL7XhQ67J2BWx?replay=1](https://manus.im/share/2EL46n4hLbL7XhQ67J2BWx?replay=1) |
-| **Task 2: Live Engine & Exports** | Live investigator engine, terminal progress stream, epistemic badges, export suite | [https://manus.im/share/XzMAQ3za5VvSkMpQG4pbcz?replay=1](https://manus.im/share/XzMAQ3za5VvSkMpQG4pbcz?replay=1) |
+| **OAuth Readiness Copilot** | Vite interface plus same-origin Express API functions | [https://composioassignment.vercel.app](https://composioassignment.vercel.app) |
+
+The API is served through `api/[...route].ts` and exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B uses a server-only `GEMINI_API_KEY` or `OPENAI_API_KEY` only when configured; otherwise it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
 
 
 ---
@@ -36,7 +33,7 @@ Experience the live interactive web applications generated and deployed autonomo
 6. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
 7. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
 8. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
-9. [Automated Test Suite Verification (213 Tests)](#-automated-test-suite-verification-213-tests)
+9. [Automated Test Suite Verification (215 Tests)](#-automated-test-suite-verification-215-tests)
 10. [Quickstart & Local Development](#-quickstart--local-development)
 11. [Project Directory Layout](#-project-directory-layout)
 
@@ -110,7 +107,7 @@ The system is built as a modular, full-stack TypeScript application combining a 
 │                                                                              │
 │  ┌────────────────────┐ ┌────────────────────┐ ┌──────────────────────────┐  │
 │  │   DirectoryView    │ │   GuideDetailView  │ │  LiveInvestigatorPanel   │  │
-│  │  100-App Catalog   │ │ Dynamic Auth Modes │ │ Real-Time Progress Stream│  │
+│  │  100-App Catalog   │ │ Dynamic Auth Modes │ │ Server-Side Retrieval   │  │
 │  │ 5 Curated Heroes   │ │  Isolated Endpoints│ │  Fast-Path / Mode 2 / AI │  │
 │  └─────────┬──────────┘ └─────────┬──────────┘ └────────────┬─────────────┘  │
 │            │                      │                         │                │
@@ -262,14 +259,13 @@ The Copilot maintains complete transparency regarding what was tested live, what
 
 ---
 
-## ✅ Automated Test Suite Verification (213 Tests)
+## ✅ Automated Test Suite Verification (215 Tests)
 
-The test suite enforces total system integrity across **12 test suites** with **213 tests passing** (0 failures) and **0 TypeScript compilation errors**:
+The last verification run used no provider API keys and passed **215 tests across 12 test suites**, with **0 TypeScript compilation errors**:
 
 ```
 Test Files  12 passed (12)
-     Tests  213 passed (213)
-  Duration  2.19s
+     Tests  215 passed (215)
 ```
 
 ### Test Suite Structure:
@@ -283,11 +279,11 @@ Test Files  12 passed (12)
 | 5 | `tests/unit/sanitizer.test.ts` | 25 | SSRF IP validator, CIDR matcher, URL sanitizer, protocol enforcer | ✅ PASS |
 | 6 | `tests/unit/schema.test.ts` | 17 | `IntegrationReadinessGuide` schema validation, `Traceable` wrapper invariants | ✅ PASS |
 | 7 | `tests/unit/adversarial_schema.test.ts` | 12 | Adversarial fuzzing, corrupted payloads, missing evidence kinds, malformed fields | ✅ PASS |
-| 8 | `tests/unit/investigator.test.ts` | 30 | Dual-mode investigator engine, Mode 1 fast-path, Mode 2 heuristic research, Mode B AI fallback | ✅ PASS |
+| 8 | `tests/unit/investigator.test.ts` | 31 | Dual-mode investigator engine, source-matched evidence, Mode 1 fast-path, Mode 2 heuristic research, Mode B fallback | ✅ PASS |
 | 9 | `tests/unit/guideValidation.test.ts` | 32 | Comprehensive schema verification across all 5 deep curated guides and edge cases | ✅ PASS |
 | 10 | `tests/unit/catalog.test.ts` | 14 | 100-app catalog distribution (50% OAuth / 25% Hybrid / 25% Direct), 10 categories (10 apps each), review gate taxonomy | ✅ PASS |
 | 11 | `tests/unit/frontendComponents.test.ts` | 7 | React component contracts: `ClaimEvidenceBadge`, `EndpointsAndCallbackBox`, `ExportEngine` | ✅ PASS |
-| 12 | `tests/unit/proxyServer.test.ts` | 14 | Express proxy endpoints (`/api/health`, `/api/retrieve`, `/api/investigate`), timeouts, caching | ✅ PASS |
+| 12 | `tests/unit/proxyServer.test.ts` | 15 | Express API routes, retrieval failures, SSRF guard, evidence downgrade, and caching | ✅ PASS |
 
 ---
 
@@ -327,7 +323,7 @@ npm run dev
 
 ### 5. Running the Test Suite
 ```bash
-# Run all 213 unit and E2E tests
+# Run all 215 unit and E2E tests
 npm test
 
 # Run TypeScript type check
@@ -349,7 +345,7 @@ composioassignment/
 ├── package.json                       # Scripts and project dependencies
 ├── tsconfig.json                      # Strict TypeScript compiler options
 ├── vite.config.ts                     # Vite config with /api proxy to port 3001
-├── tailwind.config.js                 # Dark glassmorphism design tokens
+├── tailwind.config.js                 # Editorial palette and font tokens
 ├── server/
 │   └── proxyServer.ts                 # Express proxy (SSRF guard, Cheerio, Turndown)
 ├── src/
@@ -369,7 +365,7 @@ composioassignment/
 │       ├── Navbar.tsx                 # Top navigation and view switcher
 │       ├── DirectoryView.tsx          # 100-app catalog & curated showcase
 │       ├── GuideDetailView.tsx        # Dynamic guide renderer (OAuth, Direct, Hybrid)
-│       ├── LiveInvestigatorPanel.tsx  # Terminal progress stream & live investigator
+│       ├── LiveInvestigatorPanel.tsx  # API-backed investigator and activity log
 │       ├── VerificationAuditView.tsx  # Epistemic scorecard & forensic audit table
 │       ├── ClaimEvidenceBadge.tsx     # Interactive epistemic popover badges
 │       ├── EndpointsAndCallbackBox.tsx# Visually isolated provider/Composio zones

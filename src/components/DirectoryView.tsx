@@ -44,6 +44,7 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all");
 
   const stats = useMemo(() => getCatalogStats(), []);
+  const spotlightGuide = curatedGuides.find((guide) => guide.appName.toLowerCase() === "github") || curatedGuides[0];
 
   // Filter 100-app catalog based on user selections
   const filteredApps = useMemo(() => {
@@ -195,114 +196,122 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
   };
 
   return (
-    <div className="space-y-10 pb-16">
+    <div className="directory-page space-y-10 pb-16">
       {/* ==================================================================== */}
       {/* 1. HERO BANNER                                                       */}
       {/* ==================================================================== */}
-      <section className="relative rounded-3xl p-6 sm:p-10 overflow-hidden glass-card border border-slate-800">
-        <div className="absolute -top-24 -right-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-4xl space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 text-xs font-medium">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Composio Agent Integration Directory</span>
-          </div>
-
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
-            OAuth Readiness Copilot
+      <section className="directory-hero" aria-labelledby="directory-hero-title">
+        <div className="directory-hero-copy">
+          <div className="editorial-kicker">Authentication research desk</div>
+          <h1 id="directory-hero-title" className="directory-hero-title">
+            Know what<br />it takes to<br /><span>connect.</span>
           </h1>
-
-          <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-3xl">
-            Eliminating authentication guesswork for agent builders. Know your
-            exact auth path, developer portal registration steps, required
-            scopes, and whether review gates require wait times.
+          <p>
+            Investigate authentication before your AI agent touches an integration. Follow the provider’s documentation, map the setup, and keep what is known separate from what still needs proof.
           </p>
-
-          {/* Epistemic Honesty Guarantee Bar */}
-          <div className="pt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-            <span className="font-semibold text-slate-300">Epistemic Standard:</span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/50 text-emerald-400 border border-emerald-500/30 font-medium">
-              [Tested Live]
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-950/50 text-blue-400 border border-blue-500/30 font-medium">
-              [Documented]
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-950/50 text-amber-400 border border-amber-500/30 font-medium">
-              [Hypothesis]
-            </span>
-            <span className="text-slate-400 text-[11px]">
-              (Silence in documentation is never assumed to be instant approval)
-            </span>
+          <div className="hero-actions">
+            <button type="button" className="hero-action primary" onClick={() => onInvestigateApp("", "")}>
+              Start an investigation <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="hero-action"
+              onClick={() => {
+                const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+                document.getElementById("app-catalog")?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
+              }}
+            >
+              Explore integrations <span aria-hidden="true">↓</span>
+            </button>
+          </div>
+          <div className="hero-meta">
+            <span>Evidence-first by design</span>
+            <span>OAuth / API key / hybrid</span>
           </div>
         </div>
+
+        {spotlightGuide && (
+          <aside className="research-instrument" aria-label="Curated GitHub guide preview">
+            <div className="instrument-header">
+              <span>Curated guide / source-linked</span>
+              <span>01 / 05</span>
+            </div>
+            <div className="instrument-heading">
+              <strong>{spotlightGuide.appName}</strong>
+              <span>AUTH PATH / FIELD GUIDE</span>
+            </div>
+            <div className="instrument-rows">
+              <div className="instrument-row">
+                <span>AUTH MODEL</span>
+                <div>{getAuthBadge(spotlightGuide.readinessSummary.authPathClassification)}</div>
+              </div>
+              <div className="instrument-row">
+                <span>ACTIVE SETUP</span>
+                <div>
+                  <span className="font-mono">{spotlightGuide.readinessSummary.activeSetupTime.value}</span>
+                  <ClaimEvidenceBadge evidence={spotlightGuide.readinessSummary.activeSetupTime.evidence} compact />
+                </div>
+              </div>
+              <div className="instrument-row">
+                <span>REVIEW WAIT</span>
+                <div>
+                  <span className="font-mono">{spotlightGuide.readinessSummary.approvalWaitTime.value}</span>
+                  <ClaimEvidenceBadge evidence={spotlightGuide.readinessSummary.approvalWaitTime.evidence} compact />
+                </div>
+              </div>
+            </div>
+            <p className="instrument-note">Estimates retain their evidence labels. The guide distinguishes provider requirements from Composio configuration.</p>
+            <button type="button" className="instrument-link" onClick={() => onSelectGuide(spotlightGuide)}>
+              Open the GitHub guide <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </aside>
+        )}
       </section>
 
       {/* ==================================================================== */}
       {/* 2. STATS BAR                                                         */}
       {/* ==================================================================== */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="glass-card p-4 rounded-xl border border-slate-800">
-          <div className="text-xs font-medium text-slate-400">Catalog Size</div>
-          <div className="text-2xl font-bold text-white mt-1">
-            {stats.totalApps} Apps
-          </div>
-          <div className="text-xs text-cyan-400 mt-1">10 Domain Categories</div>
+      <section className="directory-stats" aria-label="Catalog authentication distribution">
+        <div className="stat-item">
+          <span className="stat-value accent">{stats.totalApps}</span>
+          <span className="stat-label">Apps / 10 categories</span>
         </div>
-
-        <div className="glass-card p-4 rounded-xl border border-slate-800">
-          <div className="text-xs font-medium text-slate-400">OAuth Required</div>
-          <div className="text-2xl font-bold text-purple-300 mt-1">
-            {stats.byAuthPath.oauth_required} Apps
-          </div>
-          <div className="text-xs text-purple-400 mt-1">
-            {Math.round((stats.byAuthPath.oauth_required / stats.totalApps) * 100)}% of Catalog
-          </div>
+        <div className="stat-item">
+          <span className="stat-value">{stats.byAuthPath.oauth_required}</span>
+          <span className="stat-label">OAuth required</span>
         </div>
-
-        <div className="glass-card p-4 rounded-xl border border-slate-800">
-          <div className="text-xs font-medium text-slate-400">Hybrid Auth Path</div>
-          <div className="text-2xl font-bold text-cyan-300 mt-1">
-            {stats.byAuthPath.hybrid_oauth_or_direct} Apps
-          </div>
-          <div className="text-xs text-cyan-400 mt-1">
-            {Math.round((stats.byAuthPath.hybrid_oauth_or_direct / stats.totalApps) * 100)}% (Token or OAuth)
-          </div>
+        <div className="stat-item">
+          <span className="stat-value">{stats.byAuthPath.hybrid_oauth_or_direct}</span>
+          <span className="stat-label">Hybrid authentication</span>
         </div>
-
-        <div className="glass-card p-4 rounded-xl border border-slate-800">
-          <div className="text-xs font-medium text-slate-400">Direct Key Only</div>
-          <div className="text-2xl font-bold text-teal-300 mt-1">
-            {stats.byAuthPath.direct_credential_only} Apps
-          </div>
-          <div className="text-xs text-teal-400 mt-1">
-            {Math.round((stats.byAuthPath.direct_credential_only / stats.totalApps) * 100)}% Zero OAuth Setup
-          </div>
+        <div className="stat-item">
+          <span className="stat-value">{stats.byAuthPath.direct_credential_only}</span>
+          <span className="stat-label">Direct credential only</span>
         </div>
       </section>
 
       {/* ==================================================================== */}
       {/* 3. FEATURED CURATED GUIDES (5 Spotlight Apps)                        */}
       {/* ==================================================================== */}
-      <section className="space-y-4">
+      <section className="featured-guides space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-xl font-bold text-white">
-              Featured Curated Guides (Verified Runbooks)
+          <div>
+            <div className="section-kicker">Five curated field guides</div>
+            <h2 className="text-xl font-bold text-white mt-2">
+              Start with the provider.
             </h2>
           </div>
           <span className="text-xs text-slate-400 hidden sm:inline">
-            Tested & Verified against Official Provider Consoles
+            Provider-specific setup notes with claim-level provenance
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="guide-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {curatedGuides.map((guide) => (
             <div
               key={guide.appId}
               onClick={() => onSelectGuide(guide)}
-              className="glass-card glass-card-hover p-5 rounded-2xl border border-slate-800 cursor-pointer flex flex-col justify-between group"
+              className="featured-guide-card glass-card glass-card-hover p-5 rounded-2xl border border-slate-800 cursor-pointer flex flex-col justify-between group"
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -362,9 +371,10 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
       {/* ==================================================================== */}
       {/* 4. 100-APP CATALOG DIRECTORY INDEX                                   */}
       {/* ==================================================================== */}
-      <section className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <section id="app-catalog" className="app-catalog space-y-6">
+        <div className="catalog-heading flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
+            <div className="section-kicker">Integration directory / 10 categories</div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <span>100-App Catalog Directory Index</span>
               <span className="text-xs font-normal text-slate-400 font-mono px-2 py-0.5 rounded bg-slate-800">
@@ -384,6 +394,7 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search 100 apps (e.g. Linear, HubSpot)..."
+              aria-label="Search the integration catalog"
               className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition"
             />
           </div>

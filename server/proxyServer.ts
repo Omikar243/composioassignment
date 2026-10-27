@@ -15,6 +15,7 @@ import * as cheerio from "cheerio";
 import TurndownService from "turndown";
 import { validateSsrfTarget } from "../src/agent/sanitizer";
 import {
+  enforceDocumentEvidence,
   investigateApp,
   validateIntegrationReadinessGuide,
 } from "../src/agent/investigatorEngine";
@@ -321,26 +322,63 @@ export async function handleInvestigate(req: Request, res: Response) {
   }
 
   try {
-    let resolvedDocContent = docContent;
+    let resolvedDocContent = typeof docContent === "string" ? docContent : undefined;
+    let trustedServerDocContent: string | undefined;
+    let resolvedWebsiteUrl = typeof websiteUrl === "string" ? websiteUrl.trim() : undefined;
+    const retrievalLogs: string[] = [];
+    const evidenceLogs: string[] = [];
 
-    // If websiteUrl provided and no pre-supplied docContent, attempt live retrieval
-    if (!resolvedDocContent && websiteUrl && typeof websiteUrl === "string") {
-      const retrieval = await fetchAndCleanDoc(websiteUrl);
+    // Always prefer a fresh, server-fetched source when a URL is supplied.
+    if (resolvedWebsiteUrl) {
+      const retrieval = await fetchAndCleanDoc(resolvedWebsiteUrl);
       if (retrieval.success) {
         resolvedDocContent = retrieval.markdown;
+        trustedServerDocContent = retrieval.markdown;
+        resolvedWebsiteUrl = retrieval.finalUrl;
+        retrievalLogs.push(
+          `[PROXY] Retrieved ${retrieval.title || "provider documentation"} from ${retrieval.finalUrl} (${retrieval.characterCount} characters${retrieval.cached ? ", cached" : ""}).`
+        );
+      } else {
+        const reason = (retrieval.error || "unknown retrieval error").slice(0, 240);
+        retrievalLogs.push(
+          `[PROXY] Live documentation retrieval failed: ${reason}. No server-verified source text was added; unsupported generated evidence will remain Hypothesis.`
+        );
       }
+    } else if (resolvedDocContent) {
+      retrievalLogs.push(
+        "[PROXY] Caller-supplied documentation text is treated as unverified input; it cannot establish Documented evidence without a matching server-retrieved source."
+      );
     }
 
     const result = await investigateApp({
       appName: appName.trim(),
-      websiteUrl: websiteUrl ? String(websiteUrl).trim() : undefined,
+      websiteUrl: resolvedWebsiteUrl,
       docContent: resolvedDocContent,
       mode: mode === "ai_assisted" ? "ai_assisted" : "deterministic",
       forceMode: forceMode || "auto",
     });
 
+    let guide = result.guide;
+    if (result.modeUsed !== "curated_fast_path") {
+      const evidenceCheck = enforceDocumentEvidence(result.guide, trustedServerDocContent);
+      guide = evidenceCheck.guide;
+      if (evidenceCheck.downgradedCount > 0) {
+        evidenceLogs.push(
+          `[EVIDENCE] ${evidenceCheck.downgradedCount} generated claims lacked a matching server-retrieved quote or an executed live test and were labeled Hypothesis.`
+        );
+      }
+    }
+
+    if (!resolvedWebsiteUrl && !docContent) {
+      retrievalLogs.push(
+        result.modeUsed === "curated_fast_path"
+          ? "[PROXY] No live provider URL was supplied; the matching curated guide was used."
+          : "[PROXY] No live provider documentation was supplied; this dynamic result is heuristic and unsupported claims are labeled Hypothesis."
+      );
+    }
+
     // Validate generated guide
-    const validation = validateIntegrationReadinessGuide(result.guide);
+    const validation = validateIntegrationReadinessGuide(guide);
     if (!validation.isValid) {
       res.status(500).json({
         success: false,
@@ -352,11 +390,11 @@ export async function handleInvestigate(req: Request, res: Response) {
 
     res.json({
       success: true,
-      guide: result.guide,
+      guide,
       modeUsed: result.modeUsed,
-      logs: result.logs,
-      appName: result.guide.appName,
-      authPathClassification: result.guide.readinessSummary.authPathClassification,
+      logs: [...retrievalLogs, ...result.logs, ...evidenceLogs],
+      appName: guide.appName,
+      authPathClassification: guide.readinessSummary.authPathClassification,
     });
   } catch (err: any) {
     res.status(500).json({
@@ -378,7 +416,11 @@ export function startServer(port = PORT) {
   });
 }
 
-// Start listener when executed directly
-if (process.env.NODE_ENV !== "test" && typeof process.send !== "function") {
+// Start a listener for local development, but never inside Vercel Functions.
+if (
+  process.env.NODE_ENV !== "test" &&
+  process.env.VERCEL !== "1" &&
+  typeof process.send !== "function"
+) {
   startServer();
 }

@@ -25,6 +25,8 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverId = React.useId();
 
   // Close on outside click
   useEffect(() => {
@@ -36,11 +38,19 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
         setIsOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     if (isOpen) {
       document.addEventListener("mousedown", handleOutsideClick);
+      document.addEventListener("keydown", handleKeyDown);
     }
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
@@ -52,8 +62,14 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
     switch (evidence.kind) {
       case "tested_live":
         return (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors bg-emerald-950/60 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-900/60 hover:border-emerald-400/60 ${className}`}
+          <button
+            type="button"
+            ref={triggerRef}
+            aria-label="Open tested live evidence details"
+            aria-haspopup="dialog"
+            aria-expanded={isOpen}
+            aria-controls={isOpen ? popoverId : undefined}
+            className={`evidence-badge inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors bg-emerald-950/60 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-900/60 hover:border-emerald-400/60 ${className}`}
             title="Click to view live test verification proof"
             onClick={(e) => {
               e.stopPropagation();
@@ -62,12 +78,18 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
           >
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span>{compact ? "Tested" : "[Tested Live]"}</span>
-          </span>
+          </button>
         );
       case "documented_not_tested":
         return (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors bg-blue-950/60 text-blue-400 border border-blue-500/40 hover:bg-blue-900/60 hover:border-blue-400/60 ${className}`}
+          <button
+            type="button"
+            ref={triggerRef}
+            aria-label="Open documented evidence citation"
+            aria-haspopup="dialog"
+            aria-expanded={isOpen}
+            aria-controls={isOpen ? popoverId : undefined}
+            className={`evidence-badge inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors bg-blue-950/60 text-blue-400 border border-blue-500/40 hover:bg-blue-900/60 hover:border-blue-400/60 ${className}`}
             title="Click to view official documentation citation"
             onClick={(e) => {
               e.stopPropagation();
@@ -76,12 +98,18 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
           >
             <BookOpen className="w-3.5 h-3.5 text-blue-400 shrink-0" />
             <span>{compact ? "Docs" : "[Documented]"}</span>
-          </span>
+          </button>
         );
       case "unverified_hypothesis":
         return (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors bg-amber-950/60 text-amber-400 border border-amber-500/40 hover:bg-amber-900/60 hover:border-amber-400/60 ${className}`}
+          <button
+            type="button"
+            ref={triggerRef}
+            aria-label="Open hypothesis evidence rationale"
+            aria-haspopup="dialog"
+            aria-expanded={isOpen}
+            aria-controls={isOpen ? popoverId : undefined}
+            className={`evidence-badge inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors bg-amber-950/60 text-amber-400 border border-amber-500/40 hover:bg-amber-900/60 hover:border-amber-400/60 ${className}`}
             title="Click to view hypothesis rationale & unverified items"
             onClick={(e) => {
               e.stopPropagation();
@@ -90,7 +118,7 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
           >
             <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span>{compact ? "Hypoth" : "[Hypothesis]"}</span>
-          </span>
+          </button>
         );
     }
   };
@@ -101,6 +129,10 @@ export const ClaimEvidenceBadge: React.FC<ClaimEvidenceBadgeProps> = ({
 
       {isOpen && (
         <div
+          id={popoverId}
+          role="dialog"
+          aria-modal="false"
+          aria-label="Evidence details"
           className="absolute z-50 mt-2 w-80 sm:w-96 right-0 sm:right-auto sm:left-0 p-4 rounded-xl glass-card text-left text-slate-200 border border-slate-700/60 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
           onClick={(e) => e.stopPropagation()}
         >
