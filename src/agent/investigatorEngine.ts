@@ -1014,6 +1014,7 @@ Return ONLY valid JSON.`;
 
       const deadline = Date.now() + 20_000;
       const maxAttempts = 2;
+      const perAttemptTimeoutMs = 9_000;
       let resp: Response | undefined;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -1024,7 +1025,10 @@ Return ONLY valid JSON.`;
         }
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), remainingMs);
+        const timeout = setTimeout(
+          () => controller.abort(),
+          Math.min(remainingMs, perAttemptTimeoutMs)
+        );
         try {
           resp = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,

@@ -321,6 +321,45 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
       }
     });
 
+    it("retries once after a Gemini request timeout", async () => {
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalOpenAI = process.env.OPENAI_API_KEY;
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      delete process.env.OPENAI_API_KEY;
+
+      const guide = executeMode2Dynamic({
+        appName: "Linear",
+        websiteUrl: "https://linear.app",
+        docContent: "OAuth documentation",
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch")
+        .mockRejectedValueOnce(new Error("simulated request timeout"))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(guide) }] } }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }));
+
+      try {
+        const result = await executeModeBAIAssisted({
+          appName: "Linear",
+          websiteUrl: "https://linear.app",
+          docContent: "OAuth documentation",
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(result.modeUsed).toBe("ai_assisted");
+        expect(result.logs.some((log) => log.includes("request failed on attempt 1/2"))).toBe(true);
+      } finally {
+        fetchMock.mockRestore();
+        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = originalOpenAI;
+      }
+    });
+
     it("gracefully falls back to deterministic research when no API keys are configured", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
