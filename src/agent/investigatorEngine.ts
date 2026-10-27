@@ -974,6 +974,8 @@ export function stripPrivateReasoningFields<T>(input: T): { value: T; removedCou
 // 4. Mode B: AI-Assisted Research with Fallback
 // ============================================================================
 
+const GEMINI_REQUEST_TIMEOUT_MS = 4_000;
+
 export async function executeModeBAIAssisted(
   input: DynamicInvestigationInput
 ): Promise<{
@@ -1014,8 +1016,9 @@ Return ONLY valid JSON.`;
 
       const deadline = Date.now() + 20_000;
       const maxAttempts = 2;
-      const perAttemptTimeoutMs = 9_000;
+      const perAttemptTimeoutMs = GEMINI_REQUEST_TIMEOUT_MS;
       let resp: Response | undefined;
+      let responsePayload: any;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const remainingMs = deadline - Date.now();
@@ -1042,6 +1045,9 @@ Return ONLY valid JSON.`;
               }),
             }
           );
+          if (resp.ok) {
+            responsePayload = await resp.json();
+          }
         } catch (error) {
           const timeLeft = deadline - Date.now();
           if (attempt >= maxAttempts || timeLeft <= 0) throw error;
@@ -1055,7 +1061,12 @@ Return ONLY valid JSON.`;
 
         if (resp.ok) break;
 
-        const retryable = [408, 429, 500, 502, 503, 504].includes(resp.status);
+        if (resp.status === 503) {
+          logs.push("Gemini API returned HTTP 503. Skipping retries and falling back to deterministic engine.");
+          break;
+        }
+
+        const retryable = [408, 429, 500, 502, 504].includes(resp.status);
         const retryAfter = resp.headers.get("retry-after");
         if (!retryable || attempt >= maxAttempts) {
           logs.push(
@@ -1087,8 +1098,7 @@ Return ONLY valid JSON.`;
       }
 
       if (resp?.ok) {
-        const json: any = await resp.json();
-        rawJsonResponse = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        rawJsonResponse = responsePayload?.candidates?.[0]?.content?.parts?.[0]?.text;
       } else if (!resp) {
         logs.push("Gemini API did not return a response. Falling back to deterministic engine.");
       }

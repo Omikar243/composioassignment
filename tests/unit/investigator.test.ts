@@ -279,27 +279,16 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
       });
     });
 
-    it("retries a transient Gemini 503 once and accepts a recovered response", async () => {
+    it("bypasses retries on Gemini 503 and falls back to deterministic research", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
       process.env.GEMINI_API_KEY = "test-gemini-key";
       delete process.env.OPENAI_API_KEY;
 
-      const guide = executeMode2Dynamic({
-        appName: "Linear",
-        websiteUrl: "https://linear.app",
-        docContent: "OAuth documentation",
-      });
       const fetchMock = vi.spyOn(globalThis, "fetch")
         .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "temporarily overloaded" } }), {
           status: 503,
           headers: { "Retry-After": "0" },
-        }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          candidates: [{ content: { parts: [{ text: JSON.stringify(guide) }] } }],
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
         }));
 
       try {
@@ -309,11 +298,64 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
           docContent: "OAuth documentation",
         });
 
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(result.modeUsed).toBe("ai_assisted");
-        expect(result.logs.some((log) => log.includes("Retrying once"))).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(result.modeUsed).toBe("heuristic_research");
+        expect(result.logs.some((log) => log.includes("HTTP 503") && log.includes("Skipping retries"))).toBe(true);
       } finally {
         fetchMock.mockRestore();
+        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = originalOpenAI;
+      }
+    });
+
+    it("aborts a Gemini request after four seconds", async () => {
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalOpenAI = process.env.OPENAI_API_KEY;
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      delete process.env.OPENAI_API_KEY;
+      vi.useFakeTimers();
+
+      const guide = executeMode2Dynamic({
+        appName: "Linear",
+        websiteUrl: "https://linear.app",
+        docContent: "OAuth documentation",
+      });
+      let requestSignal: AbortSignal | undefined;
+      const fetchMock = vi.spyOn(globalThis, "fetch")
+        .mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
+          requestSignal = init?.signal || undefined;
+          requestSignal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            { once: true }
+          );
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(guide) }] } }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }));
+
+      try {
+        const resultPromise = executeModeBAIAssisted({
+          appName: "Linear",
+          websiteUrl: "https://linear.app",
+          docContent: "OAuth documentation",
+        });
+
+        await vi.advanceTimersByTimeAsync(4_000);
+        expect(requestSignal?.aborted).toBe(true);
+        await vi.advanceTimersByTimeAsync(1_000);
+        const result = await resultPromise;
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(result.modeUsed).toBe("ai_assisted");
+      } finally {
+        fetchMock.mockRestore();
+        vi.useRealTimers();
         if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
         else process.env.GEMINI_API_KEY = originalGemini;
         if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
