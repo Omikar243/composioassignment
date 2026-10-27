@@ -17,13 +17,28 @@ export interface ExportEngineProps {
  * Format ClaimEvidence to clean inline markdown text
  */
 function formatEvidenceTag(e: ClaimEvidence): string {
+  const markdownLink = (label: string, url: string) => {
+    const safeLabel = label
+      .replaceAll("\\", "\\\\")
+      .replaceAll("[", "\\[")
+      .replaceAll("]", "\\]");
+    const safeUrl = url.replace(/[\s<>]/g, (character) => encodeURIComponent(character));
+    return `[${safeLabel}](<${safeUrl}>)`;
+  };
+
   switch (e.kind) {
     case "tested_live":
-      return `\`[Tested Live: ${e.testedAt}]\``;
+      return e.referenceUrl
+        ? markdownLink(`Tested Live: ${e.testedAt}`, e.referenceUrl)
+        : `\`[Tested Live: ${e.testedAt}]\``;
     case "documented_not_tested":
-      return `\`[Documented: ${e.sourceTitle}]\``;
-    case "unverified_hypothesis":
-      return `\`[Hypothesis: ${e.hypothesisBasis}]\``;
+      return markdownLink(`Documented: ${e.sourceTitle}`, e.sourceUrl);
+    case "unverified_hypothesis": {
+      const tag = `\`[Hypothesis: ${e.hypothesisBasis}]\``;
+      return e.relatedSourceUrl
+        ? `${tag} (${markdownLink("Related source", e.relatedSourceUrl)})`
+        : tag;
+    }
   }
 }
 

@@ -56,6 +56,13 @@ describe("Milestone 4: Frontend Components & Export Engine Unit Tests", () => {
       const md = generateGuideMarkdown(GOOGLE_WORKSPACE_GUIDE);
       expect(md).toMatch(/`\[(Tested Live|Documented|Hypothesis): .*\]`/);
     });
+
+    it("renders documented source titles as inline Markdown links", () => {
+      const md = generateGuideMarkdown(GITHUB_GUIDE);
+      expect(md).toContain(
+        "[Documented: GitHub REST API Authentication](<https://docs.github.com/"
+      );
+    });
   });
 
   describe("Directory & Catalog Statistics Integration", () => {
