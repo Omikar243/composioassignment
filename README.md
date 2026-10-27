@@ -18,7 +18,7 @@ The current application is deployed from this repository to Vercel:
 |---|---|---|
 | **OAuth Readiness Copilot** | Vite interface plus same-origin Express API functions | [https://composioassignment.vercel.app](https://composioassignment.vercel.app) |
 
-The API is served through `api/[...route].ts` and exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B uses a server-only `GEMINI_API_KEY` or `OPENAI_API_KEY` only when configured; otherwise it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
+The API is served by the shared `api/index.ts` Vercel function. `vercel.json` rewrites `/api/:path*` to this handler before the SPA fallback; it exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B uses a server-only `GEMINI_API_KEY` or `OPENAI_API_KEY` only when configured; otherwise it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
 
 
 ---
