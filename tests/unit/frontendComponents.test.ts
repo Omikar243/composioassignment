@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateGuideMarkdown } from "../../src/components/ExportEngine";
+import { resolveProviderDocumentationUrl } from "../../src/utils/providerDocumentation";
 import {
   curatedGuides,
   GITHUB_GUIDE,
@@ -61,6 +62,47 @@ describe("Milestone 4: Frontend Components & Export Engine Unit Tests", () => {
       const md = generateGuideMarkdown(GITHUB_GUIDE);
       expect(md).toContain(
         "[Documented: GitHub REST API Authentication](<https://docs.github.com/"
+      );
+    });
+  });
+
+  describe("Provider Documentation destination", () => {
+    it("prefers a provider documentation source over the provider homepage", () => {
+      const url = resolveProviderDocumentationUrl(GITHUB_GUIDE);
+      expect(new URL(url).hostname).toBe("docs.github.com");
+    });
+
+    it("uses a documentation URL retained in generated hypothesis evidence", () => {
+      const generatedGuide = {
+        websiteUrl: "https://provider.example",
+        summary: {
+          evidence: {
+            kind: "unverified_hypothesis",
+            hypothesisBasis: "The claim was not established from retrieved text.",
+            whatRemainsUnverified: "Verify in provider documentation.",
+            relatedSourceUrl: "https://provider.example/docs/oauth",
+          },
+        },
+      };
+      expect(resolveProviderDocumentationUrl(generatedGuide)).toBe(
+        "https://provider.example/docs/oauth"
+      );
+    });
+
+    it("falls back to the main provider website when no provider docs source exists", () => {
+      const generatedGuide = {
+        websiteUrl: "https://provider.example",
+        summary: {
+          evidence: {
+            kind: "unverified_hypothesis",
+            hypothesisBasis: "No provider docs were found.",
+            whatRemainsUnverified: "Consult the provider website.",
+            relatedSourceUrl: "https://docs.composio.dev/docs/authentication",
+          },
+        },
+      };
+      expect(resolveProviderDocumentationUrl(generatedGuide)).toBe(
+        "https://provider.example"
       );
     });
   });

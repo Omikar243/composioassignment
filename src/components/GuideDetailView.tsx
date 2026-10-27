@@ -27,6 +27,7 @@ import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 import { EndpointsAndCallbackBox } from "./EndpointsAndCallbackBox";
 import { CodeSnippetSpec } from "./CodeSnippetSpec";
 import { ExportEngine } from "./ExportEngine";
+import { resolveProviderDocumentationUrl } from "../utils/providerDocumentation";
 
 export interface GuideDetailViewProps {
   guide: IntegrationReadinessGuide;
@@ -75,6 +76,7 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
   }, [guide.blockersAndPlaybooks]);
 
   const authMode = guide.authSpec.mode;
+  const providerDocumentationUrl = resolveProviderDocumentationUrl(guide);
 
   return (
     <div className="guide-detail-page space-y-8 pb-16">
@@ -115,9 +117,9 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
             </p>
           </div>
 
-          {guide.websiteUrl && (
+          {providerDocumentationUrl && (
             <a
-              href={guide.websiteUrl}
+              href={providerDocumentationUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white transition w-fit"
