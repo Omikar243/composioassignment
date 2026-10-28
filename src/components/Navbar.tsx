@@ -55,9 +55,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             type="button"
-            className={linkClass(currentView === "directory" || currentView === "guide_detail")}
+            className={linkClass(currentView === "directory")}
             onClick={() => onSelectView("directory")}
-            aria-current={currentView === "directory" || currentView === "guide_detail" ? "page" : undefined}
+            aria-current={currentView === "directory" ? "page" : undefined}
           >
             Integration Directory
           </button>
@@ -72,16 +72,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button type="button" className="nav-link" onClick={scrollToAbout}>
             About
           </button>
-          {currentView === "guide_detail" && hasActiveGuide && (
+          {hasActiveGuide && (
             <button
               type="button"
-              className="nav-guide-link"
+              className={`nav-guide-link${currentView === "guide_detail" ? " is-active" : ""}`}
               onClick={() => onSelectView("guide_detail")}
-              aria-current="page"
+              aria-current={currentView === "guide_detail" ? "page" : undefined}
               title={`Current guide: ${activeGuideName}`}
             >
               <FileText size={13} aria-hidden="true" />
-              {activeGuideName}
+              <span>{activeGuideName}</span>
             </button>
           )}
         </nav>

@@ -107,8 +107,10 @@
 .nav-links { display: flex; align-items: center; gap: clamp(12px, 2vw, 28px); }
 .nav-link { border: 0; padding: 7px 0; background: none; color: var(--text-muted); font-size: 12px; cursor: pointer; transition: color .16s ease; }
 .nav-link:hover, .nav-link.is-active { color: var(--text-main); }
-.nav-link.is-active { box-shadow: inset 0 -1px var(--accent); }
-.nav-guide-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid var(--line); background: var(--surface); color: var(--text-body); font-size: 11px; cursor: pointer; }
+.nav-guide-link { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--text-body); font-size: 11px; font-weight: 500; cursor: pointer; transition: color .16s ease, border-color .16s ease, background-color .16s ease, box-shadow .16s ease; }
+.nav-guide-link:hover { color: var(--text-main); border-color: var(--text-subtle); background: var(--surface-raised); }
+.nav-guide-link.is-active { color: var(--text-main); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: inset 0 -1px var(--accent); }
+.nav-guide-link span { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .navbar-actions { display: flex; align-items: center; gap: 10px; }
 .theme-toggle, .github-link { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--text-body); cursor: pointer; transition: color .16s, border-color .16s, background .16s; }
 .theme-toggle:hover, .github-link:hover { color: var(--accent); border-color: var(--accent); }
