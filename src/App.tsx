@@ -6,7 +6,8 @@ import { DirectoryView } from "./components/DirectoryView";
 import { GuideDetailView } from "./components/GuideDetailView";
 import { LiveInvestigatorPanel } from "./components/LiveInvestigatorPanel";
 import { VerificationAuditView } from "./components/VerificationAuditView";
-import { IntegrationReadinessGuide } from "./types/guide";
+import { CatalogAuthBaseline, IntegrationReadinessGuide } from "./types/guide";
+import type { CatalogApp } from "./data/catalog100";
 import { GITHUB_GUIDE } from "./data/curatedGuides";
 
 const getInitialTheme = (): ThemeMode => {
@@ -21,10 +22,11 @@ export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>("directory");
   const [selectedGuide, setSelectedGuide] = useState<IntegrationReadinessGuide | null>(GITHUB_GUIDE);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
-  const [investigatorPreset, setInvestigatorPreset] = useState({
-    appName: "",
-    websiteUrl: "",
-  });
+  const [investigatorPreset, setInvestigatorPreset] = useState<{
+    appName: string;
+    websiteUrl: string;
+    catalogBaseline?: CatalogAuthBaseline;
+  }>({ appName: "", websiteUrl: "" });
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -51,8 +53,16 @@ export const App: React.FC = () => {
     scrollToTop();
   };
 
-  const handleInvestigateApp = (appName: string, websiteUrl?: string) => {
-    setInvestigatorPreset({ appName, websiteUrl: websiteUrl || "" });
+  const handleInvestigateApp = (app: CatalogApp) => {
+    setInvestigatorPreset({
+      appName: app.name,
+      websiteUrl: app.authDocUrl || app.websiteUrl,
+      catalogBaseline: {
+        authPath: app.authPath,
+        supportedAuthSchemes: [...app.supportedAuthSchemes],
+        authDocUrl: app.authDocUrl,
+      },
+    });
     setCurrentView("investigator");
     scrollToTop();
   };
@@ -88,6 +98,7 @@ export const App: React.FC = () => {
           <LiveInvestigatorPanel
             initialAppName={investigatorPreset.appName}
             initialWebsiteUrl={investigatorPreset.websiteUrl}
+            initialCatalogBaseline={investigatorPreset.catalogBaseline}
             onOpenFullGuide={handleSelectGuide}
           />
         )}
