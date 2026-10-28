@@ -3702,7 +3702,7 @@ const AUTH_DOC_URLS: Record<string, string> = {
   woocommerce: "https://woocommerce.github.io/woocommerce-rest-api-docs/#authentication",
   bigcommerce: "https://developer.bigcommerce.com/docs/start/authentication",
   magento: "https://developer.adobe.com/commerce/webapi/get-started/authentication/",
-  amazon_seller_central: "https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api",
+  amazon_seller: "https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api",
   ebay: "https://developer.ebay.com/api-docs/static/oauth-authorization.html",
   etsy: "https://developers.etsy.com/documentation/essentials/authentication",
   stripe_billing: "https://docs.stripe.com/keys",
