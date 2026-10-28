@@ -1025,18 +1025,49 @@ const GEMINI_REQUEST_TIMEOUT_MS = 4_000;
 const COMPATIBLE_AI_REQUEST_TIMEOUT_MS = 4_000;
 type CompatibleProviderEngine = "groq_mode_b" | "openai_mode_b";
 
+const MODE_B_EXTRACTION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    authPathClassification: {
+      type: "string",
+      enum: ["oauth_required", "hybrid_oauth_or_direct", "direct_credential_only"],
+    },
+    supportedAuthSchemes: {
+      type: "array",
+      items: { type: "string", enum: ["OAUTH2", "API_KEY", "BEARER_TOKEN", "BASIC_AUTH"] },
+    },
+    authorizationUrl: { type: "string" },
+    tokenUrl: { type: "string" },
+    pkceRequired: {
+      type: "string",
+      enum: ["required", "supported_optional", "not_mentioned_in_sources"],
+    },
+    rationale: { type: "string" },
+    openQuestions: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "authPathClassification",
+    "supportedAuthSchemes",
+    "authorizationUrl",
+    "tokenUrl",
+    "pkceRequired",
+    "rationale",
+    "openQuestions",
+  ],
+} as const;
+
 function buildModeBPrompt(input: DynamicInvestigationInput): string {
   return `Analyze this documentation for SaaS app '${input.appName}' (${input.websiteUrl || "unknown url"}):
 ${input.docContent ? input.docContent.substring(0, 10000) : "No raw docs provided."}
 
-Return a valid JSON object strictly conforming to the IntegrationReadinessGuide TypeScript schema.
+Return a compact JSON extraction object. The server will hydrate it into the existing IntegrationReadinessGuide schema.
 Mandatory requirements:
-- If API key only, set authPathClassification="direct_credential_only" and mode="direct_credential" with whyOAuthIsNotRequired="OAuth setup isn't required for this integration path." and zero OAuth URLs.
-- If OAuth, extract authorizationUrl and tokenUrl.
-- Set composioManagedAuthStatus value="unknown" with unverified_hypothesis evidence.
-- Any unstated setup time or wait time MUST have evidence kind="unverified_hypothesis".
-- Keep readinessSummary.oneLineSummary to a concise public-facing decision synthesis; state important uncertainty and do not add facts absent from the retrieved text.
-- Do not emit raw chain-of-thought or hidden internal reasoning. Return only conclusions, evidence fields, and unresolved questions required by the schema.
+- Set authPathClassification to exactly one of oauth_required, hybrid_oauth_or_direct, or direct_credential_only.
+- Use an empty string for an endpoint that is not explicitly present in the supplied documentation; never invent an endpoint.
+- Use only OAUTH2, API_KEY, BEARER_TOKEN, or BASIC_AUTH in supportedAuthSchemes.
+- Keep rationale concise and evidence-linked; do not add facts absent from the supplied documentation.
+- Do not emit raw chain-of-thought or hidden internal reasoning.
 Return ONLY valid JSON.`;
 }
 
@@ -1064,7 +1095,14 @@ async function requestOpenAICompatibleGuide(
       body: JSON.stringify({
         model,
         temperature: 0,
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "oauth_readiness_extraction",
+            strict: true,
+            schema: MODE_B_EXTRACTION_SCHEMA,
+          },
+        },
         messages: [
           {
             role: "system",
@@ -1099,6 +1137,74 @@ async function requestOpenAICompatibleGuide(
   }
 }
 
+interface ModeBExtraction {
+  authPathClassification: AuthPathClassification;
+  supportedAuthSchemes: ConcreteAuthScheme[];
+  authorizationUrl: string;
+  tokenUrl: string;
+  pkceRequired: "required" | "supported_optional" | "not_mentioned_in_sources";
+  rationale: string;
+  openQuestions: string[];
+}
+
+function hydrateModeBExtraction(
+  extraction: ModeBExtraction,
+  input: DynamicInvestigationInput,
+): IntegrationReadinessGuide {
+  const classification = extraction.authPathClassification;
+  const classificationHints = classification === "direct_credential_only"
+    ? "The provider uses an API key only and does not use OAuth."
+    : classification === "hybrid_oauth_or_direct"
+    ? "The provider supports a private access token and a public OAuth 2.0 app."
+    : "The provider uses OAuth 2.0 authorization code flow.";
+  const hydrated = executeMode2Dynamic({
+    ...input,
+    docContent: `${input.docContent || ""}\n${classificationHints}`,
+  });
+
+  if (extraction.supportedAuthSchemes.length > 0) {
+    hydrated.supportedAuthSchemes.value = extraction.supportedAuthSchemes;
+    hydrated.supportedAuthSchemes.evidence = {
+      kind: "unverified_hypothesis",
+      hypothesisBasis: "The AI provider extracted this scheme from the supplied documentation; it was not independently tested.",
+      whatRemainsUnverified: "Provider authentication behavior and current documentation must be verified before production use.",
+    };
+  }
+
+  const authSpec = hydrated.authSpec;
+  const providerEndpoints = authSpec.mode === "oauth"
+    ? authSpec.providerEndpoints
+    : authSpec.mode === "hybrid"
+    ? authSpec.oauthPath.providerEndpoints
+    : undefined;
+
+  if (providerEndpoints) {
+    const setEndpoint = (key: "authorizationUrl" | "tokenUrl", value: string, label: string) => {
+      if (!value || !/^https:\/\//i.test(value)) return;
+      providerEndpoints[key] = {
+        value,
+        evidence: {
+          kind: "documented_not_tested",
+          sourceTitle: `${input.appName} supplied OAuth documentation`,
+          sourceUrl: input.websiteUrl || hydrated.websiteUrl,
+          whatSourceExplicitlyStates: `${label} endpoint: ${value}`,
+        },
+      };
+    };
+    setEndpoint("authorizationUrl", extraction.authorizationUrl, "Authorization");
+    setEndpoint("tokenUrl", extraction.tokenUrl, "Token");
+  }
+
+  if (authSpec.mode === "oauth") {
+    authSpec.pkceRequired.value = extraction.pkceRequired;
+  } else if (authSpec.mode === "hybrid") {
+    authSpec.oauthPath.pkceRequired.value = extraction.pkceRequired;
+  }
+
+  hydrated.readinessSummary.oneLineSummary = extraction.rationale.trim() || hydrated.readinessSummary.oneLineSummary;
+  return hydrated;
+}
+
 function finalizeAiGuide(
   rawJsonResponse: string,
   input: DynamicInvestigationInput,
@@ -1112,8 +1218,12 @@ function finalizeAiGuide(
       logs.push(`[PRIVACY] Removed ${reasoningSanitized.removedCount} model reasoning field(s); only the concise evidence-linked summary is exposed.`);
     }
 
+    const rawGuide = reasoningSanitized.value && typeof reasoningSanitized.value === "object" &&
+      "appId" in (reasoningSanitized.value as Record<string, unknown>)
+      ? reasoningSanitized.value as IntegrationReadinessGuide
+      : hydrateModeBExtraction(reasoningSanitized.value as ModeBExtraction, input);
     const evidenceChecked = enforceDocumentEvidence(
-      reasoningSanitized.value as IntegrationReadinessGuide,
+      rawGuide,
       { text: input.docContent || "", url: input.websiteUrl },
     );
     const validation = validateIntegrationReadinessGuide(evidenceChecked.guide);
@@ -1186,7 +1296,7 @@ export async function executeModeBAIAssisted(
         );
         try {
           resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-1.5-flash"}:generateContent?key=${geminiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-3.8-flash"}:generateContent?key=${geminiKey}`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },

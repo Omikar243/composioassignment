@@ -387,7 +387,9 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         const requestInit = fetchMock.mock.calls[1][1] as RequestInit;
         const requestBody = JSON.parse(String(requestInit.body));
         expect(requestBody.model).toBe("openai/gpt-oss-20b");
-        expect(requestBody.response_format).toEqual({ type: "json_object" });
+        expect(requestBody.response_format.type).toBe("json_schema");
+        expect(requestBody.response_format.json_schema.name).toBe("oauth_readiness_extraction");
+        expect(requestBody.response_format.json_schema.strict).toBe(true);
         expect((requestInit.headers as Record<string, string>).Authorization).toBe("Bearer test-groq-key");
         expect(result.modeUsed).toBe("ai_assisted");
         expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
@@ -435,6 +437,51 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(result.modeUsed).toBe("ai_assisted");
         expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
+      } finally {
+        fetchMock.mockRestore();
+        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = originalGemini;
+        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = originalGroq;
+        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = originalOpenAI;
+      }
+    });
+
+    it("hydrates a compact Groq extraction into a schema-valid AI-assisted guide", async () => {
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGroq = process.env.GROQ_API_KEY;
+      const originalOpenAI = process.env.OPENAI_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      process.env.GROQ_API_KEY = "test-groq-key";
+      delete process.env.OPENAI_API_KEY;
+
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          authPathClassification: "oauth_required",
+          supportedAuthSchemes: ["OAUTH2"],
+          authorizationUrl: "https://nebula.example/oauth/authorize",
+          tokenUrl: "https://nebula.example/oauth/token",
+          pkceRequired: "supported_optional",
+          rationale: "OAuth endpoints are stated in the supplied documentation.",
+          openQuestions: ["Confirm provider review requirements."],
+        }) } }],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+
+      try {
+        const result = await executeModeBAIAssisted({
+          appName: "Nebula",
+          docContent: "Authorization endpoint: https://nebula.example/oauth/authorize. Token endpoint: https://nebula.example/oauth/token.",
+        });
+
+        expect(result.modeUsed).toBe("ai_assisted");
+        expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
+        expect((result.guide.authSpec as OAuthProtocolSpec).providerEndpoints.authorizationUrl.value)
+          .toBe("https://nebula.example/oauth/authorize");
+        expect(validateIntegrationReadinessGuide(result.guide).isValid).toBe(true);
       } finally {
         fetchMock.mockRestore();
         if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
