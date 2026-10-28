@@ -28,16 +28,18 @@ GitHub Actions runs the deterministic test suite and production build on pushes 
 ## 📑 Table of Contents
 
 1. [Executive Summary & Core Philosophy](#-executive-summary--core-philosophy)
-2. [Epistemic Evidence Standard](#-epistemic-evidence-standard)
-3. [Architecture & System Design](#-architecture--system-design)
-4. [Five Curated Deep Guides](#-five-curated-deep-guides)
-5. [100-App Integration Catalog Index](#-100-app-integration-catalog-index)
-6. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
-7. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
-8. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
-9. [Automated Test Suite Verification (242 Tests)](#-automated-test-suite-verification-242-tests)
-10. [Quickstart & Local Development](#-quickstart--local-development)
-11. [Project Directory Layout](#-project-directory-layout)
+2. [Take-Home Assignment Compliance & Evaluation Matrix](#-take-home-assignment-compliance--evaluation-matrix)
+3. [Testing & Usage Guide: Step-by-Step Instructions](#-testing--usage-guide-step-by-step-instructions)
+4. [Epistemic Evidence Standard](#-epistemic-evidence-standard)
+5. [Architecture & System Design](#-architecture--system-design)
+6. [Five Curated Deep Guides](#-five-curated-deep-guides)
+7. [100-App Integration Catalog Index](#-100-app-integration-catalog-index)
+8. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
+9. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
+10. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
+11. [Automated Test Suite Verification (242 Tests)](#-automated-test-suite-verification-242-tests)
+12. [Quickstart & Local Development](#-quickstart--local-development)
+13. [Project Directory Layout](#-project-directory-layout)
 
 ---
 
@@ -51,6 +53,113 @@ Connecting AI agent workflows to third-party SaaS platforms through [Composio](h
 ### The Core Thesis:
 > **Reduce integration uncertainty without introducing new assumptions.**  
 > Every metric, time estimate, redirect rule, and review gate must be backed by a verifiable epistemic claim. Where documentation is silent regarding review gates, the system states **"No review gate identified in the sources checked"** and tags the estimate as an `unverified_hypothesis`. It never asserts instant approval without proof.
+
+---
+
+## 📋 Take-Home Assignment Compliance & Evaluation Matrix
+
+This matrix maps every explicit evaluation criterion and prompt requirement from the APM Integrations take-home assignment to its concrete implementation and verification in this project:
+
+| Assignment Requirement | What Was Built & Verified | Epistemic Verification |
+| :--- | :--- | :--- |
+| **1. The Developer Problem**<br>• Look up an app<br>• Get a guide they can use and share<br>• Know what to do next | • **Directory Lookup**: Real-time search across 100 SaaS apps with multi-facet filters (category, auth model, setup difficulty).<br>• **Universal Export Engine**: One-click **Shareable Deep Link** (`#app=slack`), **Download Markdown** (`.md`), **Download JSON Schema** (`.json`), and **Print / PDF**.<br>• **Actionable Runbook**: Chronological steps with direct portal links, required form fields, and explicit error mitigation. | Tested across all 5 curated guides and live arbitrary URL exports in Vitest (`tests/e2e/tier1_features.test.ts`). |
+| **2. Ease vs. Difficulty Assessment**<br>• How easy or difficult it is to get ready | • **Readiness & Friction Badges**: Clear visual scoring (`low`, `medium`, `high`, `extreme`) on every guide and catalog card.<br>• **Review Gate Taxonomy**: Classifies apps into `no_gate`, `conditional_gate`, `mandatory_enterprise_gate`, or `unknown`. | Formally verified via `ReviewGateStatus` schema and adversarial fuzzing tests. |
+| **3. Time & Effort Bisection**<br>• Likely time and effort involved<br>• Wait for approval | • **Conflation Prevention**: Explicitly bisects integration time into two separate metrics:<br>&nbsp;&nbsp;1. **`activeSetupTime`**: Hands-on developer portal work (e.g. `~5–10 mins` for GitHub, `~20–30 mins` for Slack).<br>&nbsp;&nbsp;2. **`approvalWaitTime`**: Passive provider queue / security review wait (e.g. `~2–4 weeks` for Slack App Directory, `~2–6 weeks` for Google CASA Tier 2).<br>• **Documentation Silence Guardrail**: Where provider docs are silent, the system states *"No review gate identified in the sources checked"* and tags it as `[unverified_hypothesis]`. | `isIndependentlyTested` invariant enforces that documentation silence is never asserted as instant approval. |
+| **4. Nuances & Gotchas**<br>• Requirements and nuances affecting setup | • Curated and heuristic detection of critical pitfalls:<br>&nbsp;&nbsp;• **Google**: 100-user testing cap & 7-day refresh token lifespan in Testing mode.<br>&nbsp;&nbsp;• **Slack**: `invalid_team_for_non_distributed_app` error when sharing across workspaces; bot vs. user scope separation.<br>&nbsp;&nbsp;• **GitHub**: OAuth App vs. GitHub App architectural fork; default 8-hour token expiration.<br>&nbsp;&nbsp;• **Notion**: Internal bot token (single workspace) vs. Public OAuth (multi-tenant); explicit page sharing rules.<br>&nbsp;&nbsp;• **Perplexity / Supabase**: Clear explanation that OAuth setup isn't required for direct API key paths.<br>&nbsp;&nbsp;• **Strict Redirect Rules**: Enforcement of HTTPS and explicit rejection of `#` anchor fragments. | Documented with verbatim quotes and reference URLs in `verificationAudit.ts`. |
+| **5. Agent vs. Developer Boundary**<br>• What an agent can do<br>• Where humans take over | • **Tri-State Actor Assignment** on every single runbook step:<br>&nbsp;&nbsp;• `agent_prepared`: Actions an AI agent or Composio CLI can automate (generating callback URIs, drafting manifests, assembling scopes).<br>&nbsp;&nbsp;• `developer_portal_action`: Manual human actions in provider consoles (logging in, creating client secrets, toggling distribution).<br>&nbsp;&nbsp;• `provider_review_gate`: Waiting on third-party security audits or manual partner approvals. | Enforced in TypeScript schema (`Actor` union) and displayed with distinctive badge icons. |
+| **6. Library of 100 Apps + Varied Curated Guides**<br>• Ready-to-use guides for 100 apps<br>• Demonstrate a few varied apps | • **100-App Catalog Index (`src/data/catalog100.ts`)**: 10 core SaaS categories (10 apps each) with official auth doc links, setup difficulty, and 3 distinctive auth categories (**44 OAuth Required / 31 Hybrid Auth / 25 Direct Key Only**).<br>• **5 Deep Curated Archetypes (`src/data/curatedGuides.ts`)** demonstrating contrasting setup challenges:<br>&nbsp;&nbsp;1. **Slack**: Conditional review gate, strict redirect URIs, bot vs. user scopes.<br>&nbsp;&nbsp;2. **Google Workspace**: Mandatory enterprise CASA Tier 2 audit, 100-user cap.<br>&nbsp;&nbsp;3. **GitHub**: Hybrid auth (OAuth vs. PAT vs. GitHub App).<br>&nbsp;&nbsp;4. **Notion**: Hybrid auth (Internal bot token vs. Public OAuth).<br>&nbsp;&nbsp;5. **Perplexity**: Direct credential only with zero OAuth requirement banner. | All 100 catalog baselines and 5 curated guides validated in Vitest (`catalog.test.ts`, `guideValidation.test.ts`). |
+| **7. Live Dynamic Investigation Flow**<br>• Submit name or website of an app<br>• Generate shareable guide in real time | • **Live Investigator (`src/components/LiveInvestigatorPanel.tsx`)**: Accepts any custom app name or arbitrary URL.<br>• **SSRF-Safe Retrieval Backend (`/api/retrieve` + `server/proxyServer.ts`)**: Blocks private RFC 1918 subnets, cloud metadata (`169.254.169.254`), and loopback addresses; strips HTML bloat with Cheerio/Turndown within a 15k-character budget.<br>• **Dual-Mode Engine (`src/agent/investigatorEngine.ts`)**:<br>&nbsp;&nbsp;• *Mode 1*: Instant (<5ms) retrieval for curated apps.<br>&nbsp;&nbsp;• *Mode 2*: Deterministic heuristic extraction for endpoints, scopes, PKCE, and auth model.<br>&nbsp;&nbsp;• *Mode B*: Server-side AI-assisted extraction (Groq `openai/gpt-oss-20b` / OpenAI `gpt-4o-mini`) with schema validation and automatic deterministic fallback. | Validated in `proxyServer.test.ts` and `investigator.test.ts`. |
+| **8. Epistemic Evidence & Myth Corrections**<br>• Clear about what was tested<br>• What sources support<br>• What remains uncertain | • **3-Tier Epistemic Claim System** (`Traceable<T>`):<br>&nbsp;&nbsp;• `tested_live` (Emerald badge): Directly executed in live developer portals.<br>&nbsp;&nbsp;• `documented_not_tested` (Blue badge): Verbatim quote from canonical provider documentation.<br>&nbsp;&nbsp;• `unverified_hypothesis` (Amber badge): Inferred heuristic; explicitly discloses what remains unverified.<br>• **Verification Audit Tab (`src/components/VerificationAuditView.tsx`)**: Dedicated forensic audit ledger showing tested portal actions, documented facts, myth corrections, and open uncertainties. | Full interactive UI tab and programmatic audit ledger in `verificationAudit.ts`. |
+| **9. Isolated Endpoints & Callback UX**<br>• Provider OAuth app vs Composio managed auth | • **Two-Zone Isolated Display (`EndpointsAndCallbackBox.tsx`)** preventing the #1 developer mistake (pasting provider endpoints as redirect URIs):<br>&nbsp;&nbsp;• **Zone A (Purple Glass)**: Provider Endpoints (Authorization URL, Token URL, PKCE) — explicitly labelled as endpoints your app calls.<br>&nbsp;&nbsp;• **Zone B (Cyan Glass)**: Composio Callback Guidance — explicitly labelled as the Redirect URI to paste into the provider portal.<br>• **Managed Auth Availability**: Clear indicator (`available`, `bring_your_own_required`, `unknown`). | Tested in `frontendComponents.test.ts` and `tier1_features.test.ts`. |
+| **10. Production Quality, Tests & Deliverables**<br>• Working link & repository<br>• Short README with setup & decisions<br>• Zero credentials committed | • **Live Vercel Deployment**: [https://composioassignment.vercel.app/](https://composioassignment.vercel.app/)<br>• **GitHub Repository**: [https://github.com/Omikar243/composioassignment](https://github.com/Omikar243/composioassignment)<br>• **Zero Credentials Committed**: Zero exposed API keys in code or git history.<br>• **Test Suite**: **242 tests passing across 13 test suites (100% pass rate)** in Vitest + 0 TypeScript errors.<br>• **Exhaustive Documentation**: Setup instructions, architecture diagram, design decisions, verification audit, and limitations. | CI workflow (`.github/workflows/ci.yml`) runs full test suite and build on every push. |
+
+---
+
+## 🧪 Testing & Usage Guide: Step-by-Step Instructions
+
+This guide provides end-to-end instructions for evaluating both the **pre-built catalog** and the **live dynamic investigator** using arbitrary third-party URLs.
+
+### 1. Interactive Catalog & Curated Guides Walkthrough
+1. **Explore the 100-App Catalog**:
+   - Open the live deployment at [https://composioassignment.vercel.app/](https://composioassignment.vercel.app/).
+   - Filter by **Auth Path Model** using the dropdown:
+     - `OAuth Required (44)`: Apps mandating full OAuth 2.0 app registration for multi-tenant integrations.
+     - `Hybrid Auth (31)`: Apps offering both internal PATs/private app tokens and public OAuth apps.
+     - `Direct Key Only (25)`: Apps using direct static API keys with zero OAuth requirements.
+   - Use the category selector (Developer Tools, CRM & Sales, AI & Search, etc.) or search bar to find any app.
+2. **Inspect the 5 Curated Deep Guides**:
+   - Click any hero card (`Slack`, `Google Workspace`, `GitHub`, `Notion`, or `Perplexity`) or select **"Curated Guides"** in the top navigation.
+   - Observe the **Two-Zone Endpoints Box**: Zone A (Provider Endpoints) is visually separated from Zone B (Composio Callback Guidance).
+   - Click on any **Epistemic Badge** (`[Tested Live]`, `[Documented]`, `[Hypothesis]`) to open an interactive modal revealing exact testing timestamps, console actions, verbatim documentation quotes, or declared hypotheses.
+   - For **Hybrid Apps** (e.g. GitHub or Notion), use the interactive path switcher to compare *Internal Scripting* vs *Public Multi-Tenant App* requirements.
+   - For **Direct Key Apps** (e.g. Perplexity), observe the prominent banner explaining that OAuth setup is not required.
+3. **Export and Share**:
+   - In any guide, click **"Copy Shareable Link"** to copy a deep link with URL hash (e.g., `#app=slack`). Opening this link in any browser navigates directly to that guide.
+   - Click **"Download Markdown"** or **"Download JSON"** to export structured artifacts for your knowledge base or AI agent pipelines.
+
+---
+
+### 2. Live Dynamic Investigator: Testing Unlisted & Arbitrary Apps
+
+The Live Investigator allows you to submit **any SaaS application or developer documentation URL** outside the 100-app catalog and generate a shareable guide in real time.
+
+#### 📌 What the URL Should Be & What It Should Contain
+For the investigator to extract meaningful authentication requirements, the URL should meet the following criteria:
+
+| Quality | Specification | Why It Matters |
+| :--- | :--- | :--- |
+| **Protocol** | **Must use `https://`** | Enforced by the SSRF security sanitizer (`src/agent/sanitizer.ts`). Non-HTTPS URLs are rejected. |
+| **Page Type** | **Official Developer Documentation or API Reference** | **Do not submit generic marketing homepages** (e.g., `https://supabase.com`). Marketing pages only contain marketing copy, pricing, and feature highlights; they do not contain technical authentication specifications, endpoints, or scopes. |
+| **Target Content** | **Authentication, Authorization, or Quickstart page** | The page should ideally mention authentication terms such as `API key`, `Bearer token`, `OAuth 2.0`, `Authorization Code`, `client_id`, `redirect_uri`, `scopes`, or `Personal Access Token`. |
+
+---
+
+#### 🧪 Pre-Verified Test URLs (Outside the 100-App Catalog)
+To test the Live Investigator across all three distinct authentication paradigms, paste the following verified URLs into the investigator:
+
+#### Test Case A: Strict OAuth 2.0 (`oauth_required`)
+* **App Name**: `Spotify Web API`
+* **Documentation URL**: `https://developer.spotify.com/documentation/web-api/concepts/authorization`
+* **What the Page Contains**: Documents OAuth 2.0 Authorization Code flow with PKCE, Client Credentials, authorization scopes, and redirect URIs. Mentions zero static API keys.
+* **Expected Result**: 
+  - Classifies as **OAuth Required** (`oauth_required`).
+  - Identifies PKCE support (`supported_optional`).
+  - Separates Spotify authorization/token endpoints in Zone A from Composio redirect guidance in Zone B.
+
+#### Test Case B: Hybrid Authentication (`hybrid_oauth_or_direct`)
+* **App Name**: `Figma REST API`
+* **Documentation URL**: `https://www.figma.com/developers/api#authentication`
+* **What the Page Contains**: Documents both Personal Access Tokens (`X-Figma-Token` header) for personal scripts and OAuth 2.0 application flows for public integrations.
+* **Expected Result**:
+  - Classifies as **Hybrid Auth** (`hybrid_oauth_or_direct`).
+  - Generates dual-path decision guidance explaining when to use a static PAT (~2 mins) versus a full OAuth app (~15 mins).
+
+#### Test Case C: Direct Credential Only (`direct_credential_only`)
+* **App Name**: `Postmark API`
+* **Documentation URL**: `https://postmarkapp.com/developer/api/overview`
+* *(Alternative: DeepL API: `https://www.deepl.com/docs-api/accessing-the-api/`)*
+* **What the Page Contains**: Documents server API tokens (`X-Postmark-Server-Token`) and account tokens in HTTP headers. Contains zero OAuth endpoints or consent flows.
+* **Expected Result**:
+  - Classifies as **Direct Key Only** (`direct_credential_only`).
+  - Renders the high-visibility banner: *"OAuth setup isn't required for this integration path."*
+  - Suppresses blank OAuth endpoint fields to prevent confusing developers.
+
+---
+
+#### 🛠️ Step-by-Step Live Investigation Walkthrough
+1. Click **"Live Investigator"** in the top navigation bar (or click **"Investigate"** on any card in the directory).
+2. Enter the **App Name** (e.g., `Spotify` or `Figma`) and paste the official **Documentation URL** from the test cases above.
+3. Choose the **Research Mode**:
+   - **Deterministic Heuristic (Mode 2)**: Instant, zero-API-key mode. Extracts endpoints, detects PKCE, identifies direct API keys vs OAuth flows, and maps evidence.
+   - **AI-Assisted (Mode B)**: Server-side LLM extraction (requires `GROQ_API_KEY` or `OPENAI_API_KEY` in server environment; safely falls back to Mode 2 if unconfigured).
+4. Click **"Run Live Investigation"**.
+5. Watch the **Live Terminal Execution Log**:
+   - `[SSRF Guard]`: Validates URL protocol and blocks private subnets / loopbacks.
+   - `[HTTP Retrieval]`: Fetches HTML via outbound HTTPS with an 8s timeout.
+   - `[HTML Scraper]`: Cleans DOM bloat (scripts, styles, navbars, footers) via Cheerio and synthesizes Markdown via Turndown within a 15k-character budget.
+   - `[Classifier]`: Identifies the authentication model (OAuth, Hybrid, or Direct).
+   - `[Schema Oracle]`: Generates a fully validated `IntegrationReadinessGuide` with strict epistemic evidence tags.
+6. Review the resulting guide: check the difficulty score, review gate status, and export the generated guide via Markdown, JSON, or shareable link.
 
 ---
 
