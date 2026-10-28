@@ -355,13 +355,13 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const baseline = input.catalogBaseline;
   const explicitHybridEvidence =
     /personal access token|private app token|private app access token|api token/i.test(rawText) &&
-    /oauth(?:\\s*2\\.0)?|authorization_code|public app|multi-tenant/i.test(rawText);
+    /oauth(?:\s*2\.0)?|authorization_code|public app|multi-tenant/i.test(rawText);
   const explicitDirectEvidence =
     /(?:api key|api token|bearer token|personal access token)/i.test(rawText) &&
     /(?:authorization: bearer|x-api-key|apikey|authenticate|authentication|api request)/i.test(rawText) &&
     !/oauth.{0,80}(?:required|must|only)|authorization code flow required/i.test(rawText);
   const explicitOAuthEvidence =
-    /oauth 2\\.0 authorization code|authorization code flow|oauth.{0,50}(?:required|must be configured)|client_id.{0,80}redirect_uri/i.test(rawText);
+    /oauth 2\.0 authorization code|authorization code flow|oauth.{0,50}(?:required|must be configured)|client_id.{0,80}redirect_uri/i.test(rawText);
   const hybridProviders = [
     "github", "gitlab", "jira", "confluence", "linear", "bitbucket", "circleci",
     "discord", "notion", "asana", "trello", "clickup", "monday", "airtable",
