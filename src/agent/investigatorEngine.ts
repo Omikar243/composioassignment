@@ -19,6 +19,7 @@ import {
   HybridAuthSpec,
   ConcreteAuthScheme,
   AuthPathClassification,
+  CatalogAuthBaseline,
   ManagedAuthAvailability,
   SetupStep,
   BlockerPlaybookItem,
@@ -321,6 +322,7 @@ export interface DynamicInvestigationInput {
   appName: string;
   websiteUrl?: string;
   docContent?: string;
+  catalogBaseline?: CatalogAuthBaseline;
 }
 
 /**
@@ -348,32 +350,42 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const domain = parsedWebsiteUrl?.hostname || `${lowerName.replace(/[^a-z0-9]/g, "")}.com`;
   const canonicalUrl = parsedWebsiteUrl?.toString() || `https://${domain}`;
 
-  // Step 1: Detect Auth Path Classification
-  let authPath: AuthPathClassification = "oauth_required";
-
-  const isResendOrApiKeyOnly =
-    lowerName.includes("resend") ||
-    lowerName.includes("elevenlabs") ||
-    lowerName.includes("sendgrid") ||
-    lowerName.includes("replicate") ||
-    (lowerText.includes("api key") &&
-      !lowerText.includes("oauth") &&
-      !lowerText.includes("redirect_uri") &&
-      !lowerText.includes("client_id"));
-
-  const isHubSpotOrHybrid =
-    lowerName.includes("hubspot") ||
-    lowerName.includes("airtable") ||
-    lowerName.includes("jira") ||
-    lowerName.includes("confluence") ||
-    (lowerText.includes("private app") || lowerText.includes("personal access token")) &&
-      (lowerText.includes("oauth 2.0") || lowerText.includes("public app") || lowerText.includes("authorization_code"));
-
-  if (isResendOrApiKeyOnly) {
-    authPath = "direct_credential_only";
-  } else if (isHubSpotOrHybrid) {
+  // Step 1: Resolve authentication classification. Catalog metadata is the baseline;
+  // generic marketing copy and footer mentions must not overwrite provider auth facts.
+  const baseline = input.catalogBaseline;
+  const explicitHybridEvidence =
+    /personal access token|private app token|private app access token|api token/i.test(rawText) &&
+    /oauth(?:\\s*2\\.0)?|authorization_code|public app|multi-tenant/i.test(rawText);
+  const explicitDirectEvidence =
+    /(?:api key|api token|bearer token|personal access token)/i.test(rawText) &&
+    /(?:authorization: bearer|x-api-key|apikey|authenticate|authentication|api request)/i.test(rawText) &&
+    !/oauth.{0,80}(?:required|must|only)|authorization code flow required/i.test(rawText);
+  const explicitOAuthEvidence =
+    /oauth 2\\.0 authorization code|authorization code flow|oauth.{0,50}(?:required|must be configured)|client_id.{0,80}redirect_uri/i.test(rawText);
+  const hybridProviders = [
+    "github", "gitlab", "jira", "confluence", "linear", "bitbucket", "circleci",
+    "discord", "notion", "asana", "trello", "clickup", "monday", "airtable",
+    "coda", "todoist", "hubspot", "zendesk", "salesforce", "pipedrive",
+    "zoho", "stripe", "square", "wise", "woocommerce", "magento", "chargebee",
+    "bamboohr", "deel", "greenhouse", "lever", "personio", "sentry", "pagerduty",
+  ];
+  const directProviders = [
+    "resend", "elevenlabs", "sendgrid", "replicate", "supabase", "datadog",
+    "vercel", "twilio", "telegram", "openai", "anthropic", "perplexity", "tavily",
+    "cohere", "pinecone", "weaviate", "hugging face", "plaid", "mercury",
+    "aws s3", "google cloud storage", "cloudflare r2", "backblaze",
+  ];
+  let authPath: AuthPathClassification;
+  if (baseline) {
+    authPath = baseline.authPath;
+  } else if (explicitHybridEvidence || hybridProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "hybrid_oauth_or_direct";
+  } else if (explicitDirectEvidence || directProviders.some((provider) => lowerName.includes(provider))) {
+    authPath = "direct_credential_only";
+  } else if (explicitOAuthEvidence) {
+    authPath = "oauth_required";
   } else {
+    // The guide schema has three categories; the rationale explicitly marks this as provisional.
     authPath = "oauth_required";
   }
 
@@ -484,7 +496,9 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
 
   // Step 4: Construct Conditional Auth Spec
   let authSpec: ConditionalAuthSpec;
-  let supportedAuthSchemes: ConcreteAuthScheme[] = ["OAUTH2"];
+  let supportedAuthSchemes: ConcreteAuthScheme[] = baseline?.supportedAuthSchemes?.length
+    ? [...baseline.supportedAuthSchemes]
+    : ["OAUTH2"];
 
   if (authPath === "direct_credential_only") {
     supportedAuthSchemes = ["API_KEY"];
@@ -800,10 +814,15 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           },
         ];
 
+  if (baseline?.supportedAuthSchemes?.length) {
+    supportedAuthSchemes = [...baseline.supportedAuthSchemes];
+  }
+
   const guide: IntegrationReadinessGuide = {
     appId: lowerName.replace(/[^a-z0-9]/g, "_"),
     appName: name,
     websiteUrl: canonicalUrl,
+    ...(baseline?.authDocUrl ? { authDocUrl: baseline.authDocUrl } : {}),
     composioToolkitSlug: lowerName.replace(/[^a-z0-9]/g, "-"),
     supportedAuthSchemes: {
       value: supportedAuthSchemes,
@@ -825,8 +844,11 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           : "User connections require registering and configuring an OAuth application with the provider.",
       activeSetupTime,
       approvalWaitTime,
-      oneLineSummary:
-        `Heuristic ${authPath.replace(/_/g, " ")} classification for ${name}; verify auth support, endpoints, and provider review requirements against current documentation.`,
+      oneLineSummary: baseline
+        ? `Catalog baseline ${authPath.replace(/_/g, " ")} classification for ${name}; dynamic analysis preserves the catalog path unless provider-specific authentication evidence is reviewed.`
+        : rawText.trim().length < 80
+          ? `Provisional ${authPath.replace(/_/g, " ")} classification for ${name}; insufficient documentation was retrieved to confirm the authentication path. Verify against official auth documentation.`
+          : `Evidence-based ${authPath.replace(/_/g, " ")} classification for ${name}; verify auth support, endpoints, and provider review requirements against current documentation.`,
     },
     prerequisites: {
       value: [
@@ -1320,6 +1342,7 @@ export interface InvestigationRequest {
   appName: string;
   websiteUrl?: string;
   docContent?: string;
+  catalogBaseline?: CatalogAuthBaseline;
   mode?: "deterministic" | "ai_assisted";
   forceMode?: "auto" | "curated_only" | "dynamic_only";
 }
@@ -1356,6 +1379,7 @@ export async function investigateApp(req: InvestigationRequest): Promise<Investi
       appName: req.appName,
       websiteUrl: req.websiteUrl,
       docContent: req.docContent,
+      catalogBaseline: req.catalogBaseline,
     });
     logs.push(...result.logs);
     return { guide: result.guide, modeUsed: result.modeUsed, logs };
@@ -1367,6 +1391,7 @@ export async function investigateApp(req: InvestigationRequest): Promise<Investi
     appName: req.appName,
     websiteUrl: req.websiteUrl,
     docContent: req.docContent,
+    catalogBaseline: req.catalogBaseline,
   });
 
   const validation = validateIntegrationReadinessGuide(dynamicGuide);
