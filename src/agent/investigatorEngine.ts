@@ -5,7 +5,7 @@
  * Implements:
  * - Mode 1: Deterministic fast-path curated lookup (<5ms)
  * - Mode 2: Dynamic heuristic research for unfamiliar apps (Linear, HubSpot, Resend, Calendly, etc.)
- * - Mode B: AI-assisted research with Gemini / OpenAI and automatic deterministic fallback
+ * - Mode B: AI-assisted research with Groq / OpenAI and automatic deterministic fallback
  * - Strict IntegrationReadinessGuide schema verification
  */
 
@@ -1021,7 +1021,6 @@ export function stripPrivateReasoningFields<T>(input: T): { value: T; removedCou
 // 4. Mode B: AI-Assisted Research with Fallback
 // ============================================================================
 
-const GEMINI_REQUEST_TIMEOUT_MS = 12_000;
 const COMPATIBLE_AI_REQUEST_TIMEOUT_MS = 4_000;
 type CompatibleProviderEngine = "groq_mode_b" | "openai_mode_b";
 
@@ -1208,7 +1207,7 @@ function hydrateModeBExtraction(
 function finalizeAiGuide(
   rawJsonResponse: string,
   input: DynamicInvestigationInput,
-  engine: "gemini_mode_b" | CompatibleProviderEngine,
+  engine: CompatibleProviderEngine,
   logs: string[],
 ): IntegrationReadinessGuide | undefined {
   try {
@@ -1255,12 +1254,11 @@ export async function executeModeBAIAssisted(
   modeUsed: "heuristic_research" | "ai_assisted";
 }> {
   const logs: string[] = [];
-  const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
 
-  if (!geminiKey && !groqKey && !openaiKey) {
-    logs.push("No GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
+  if (!groqKey && !openaiKey) {
+    logs.push("No GROQ_API_KEY or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
     const guide = executeMode2Dynamic(input);
     return { guide, logs, modeUsed: "heuristic_research" };
   }
@@ -1270,121 +1268,6 @@ export async function executeModeBAIAssisted(
   try {
     // Attempt LLM generation if key is present
     const prompt = buildModeBPrompt(input);
-
-    if (geminiKey) {
-      logs.push("Querying Gemini API...");
-
-      const deadline = Date.now() + 20_000;
-      const maxAttempts = 2;
-      const perAttemptTimeoutMs = GEMINI_REQUEST_TIMEOUT_MS;
-      let resp: Response | undefined;
-      let responsePayload: any;
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        const remainingMs = deadline - Date.now();
-        if (remainingMs <= 0) {
-          logs.push("Gemini request budget exhausted; moving to configured provider fallbacks.");
-          break;
-        }
-
-        resp = undefined;
-        responsePayload = undefined;
-        const controller = new AbortController();
-        const timeout = setTimeout(
-          () => controller.abort(),
-          Math.min(remainingMs, perAttemptTimeoutMs)
-        );
-        try {
-          resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-3.8-flash"}:generateContent?key=${geminiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal: controller.signal,
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" },
-              }),
-            }
-          );
-          if (resp.ok) {
-            responsePayload = await resp.json();
-          }
-        } catch (error) {
-          const timeLeft = deadline - Date.now();
-          if (attempt >= maxAttempts || timeLeft <= 0) {
-            const reason = error instanceof Error && error.name === "AbortError"
-              ? `timed out after ${Math.min(remainingMs, perAttemptTimeoutMs)}ms`
-              : "network/request error";
-            logs.push(`Gemini request ${reason} on attempt ${attempt}/${maxAttempts}; moving to configured provider fallbacks.`);
-            break;
-          }
-          const delayMs = Math.min(750 + Math.floor(Math.random() * 250), Math.max(0, timeLeft - 1));
-          const reason = error instanceof Error && error.name === "AbortError"
-            ? `timed out after ${Math.min(remainingMs, perAttemptTimeoutMs)}ms`
-            : "network/request error";
-          logs.push(`Gemini request ${reason} on attempt ${attempt}/${maxAttempts}. Retrying once in ${delayMs}ms.`);
-          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-          continue;
-        } finally {
-          clearTimeout(timeout);
-        }
-
-        if (resp?.ok) break;
-
-        if (!resp) {
-          logs.push("Gemini API returned no response; trying configured provider fallbacks.");
-          break;
-        }
-
-        if (resp.status === 503) {
-          logs.push("Gemini API returned HTTP 503. Skipping retries and trying configured provider fallbacks.");
-          break;
-        }
-
-        const retryable = [408, 429, 500, 502, 504].includes(resp.status);
-        const retryAfter = resp.headers.get("retry-after");
-        if (!retryable || attempt >= maxAttempts) {
-          logs.push(
-            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""} after ${attempt} attempt(s); moving to configured provider fallbacks.`
-          );
-          break;
-        }
-
-        const retryAfterSeconds = Number(retryAfter);
-        const retryAfterDate = retryAfter ? Date.parse(retryAfter) : Number.NaN;
-        const advisedDelayMs = retryAfter && Number.isFinite(retryAfterSeconds)
-          ? Math.max(0, retryAfterSeconds * 1000)
-          : retryAfter && Number.isFinite(retryAfterDate)
-            ? Math.max(0, retryAfterDate - Date.now())
-            : 750;
-        const delayMs = advisedDelayMs + Math.floor(Math.random() * 250);
-        const timeLeft = deadline - Date.now();
-        if (delayMs >= timeLeft) {
-          logs.push(
-            `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}; no retry fits within the request budget, moving to configured provider fallbacks.`
-          );
-          break;
-        }
-
-        logs.push(
-          `Gemini API returned HTTP ${resp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}. Retrying once in ${delayMs}ms.`
-        );
-        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-      }
-
-      if (resp?.ok) {
-        const rawJsonResponse = responsePayload?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawJsonResponse) {
-          const guide = finalizeAiGuide(rawJsonResponse, input, "gemini_mode_b", logs);
-          if (guide) return { guide, logs, modeUsed: "ai_assisted" };
-        } else {
-          logs.push("Gemini returned an empty content payload; trying configured provider fallbacks.");
-        }
-      } else if (!resp) {
-        logs.push("Gemini API did not return a response; trying configured provider fallbacks.");
-      }
-    }
 
     if (groqKey) {
       const groqResult = await requestOpenAICompatibleGuide(

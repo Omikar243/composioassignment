@@ -18,7 +18,7 @@ The current application is deployed from this repository to Vercel:
 |---|---|---|
 | **OAuth Readiness Copilot** | Vite interface plus same-origin Express API functions | [https://composioassignment.vercel.app](https://composioassignment.vercel.app) |
 
-The API is served by the shared `api/index.ts` Vercel function. `vercel.json` rewrites `/api/:path*` to this handler before the SPA fallback; it exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B tries server-only providers in this order: Gemini, Groq, then OpenAI; when none is configured or all fail validation, it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
+The API is served by the shared `api/index.ts` Vercel function. `vercel.json` rewrites `/api/:path*` to this handler before the SPA fallback; it exposes `/api/health`, `/api/retrieve`, and `/api/investigate`. Mode 2 does not require an LLM key. Mode B tries server-only providers in this order: Groq, then OpenAI; when none is configured or all fail validation, it returns the deterministic Mode 2 fallback and labels it accordingly. Never add provider keys to `VITE_*` variables or commit them to the repository. See [Vercel's Express deployment guide](https://vercel.com/docs/frameworks/backend/express).
 
 GitHub Actions runs the deterministic test suite and production build on pushes to `main` and pull requests. Vercel's existing Git integration remains responsible for deployment, so this workflow does not create a duplicate deploy pipeline.
 
@@ -35,7 +35,7 @@ GitHub Actions runs the deterministic test suite and production build on pushes 
 6. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
 7. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
 8. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
-9. [Automated Test Suite Verification (234 Tests)](#-automated-test-suite-verification-234-tests)
+9. [Automated Test Suite Verification (230 Tests)](#-automated-test-suite-verification-230-tests)
 10. [Quickstart & Local Development](#-quickstart--local-development)
 11. [Project Directory Layout](#-project-directory-layout)
 
@@ -125,7 +125,7 @@ The system is built as a modular, full-stack TypeScript application combining a 
 │  ┌──────────────────────┐  ┌───────────────────────┐  ┌───────────────────┐  │
 │  │   GET /api/health    │  │   POST /api/retrieve  │  │POST /api/investigate  │
 │  │  Uptime & Heartbeat  │  │  SSRF Guard + Cheerio │  │ Mode 1 / Mode 2   │  │
-│  │                      │  │ Turndown (<15k chars) │  │ Mode B (Gemini/OAI│  │
+│  │                      │  │ Turndown (<15k chars) │  │ Mode B (Groq/OAI) │  │
 │  └──────────────────────┘  └───────────────────────┘  └───────────────────┘  │
 │                                    │                                         │
 │                      Outbound HTTPS│ (8s AbortController)                   │
@@ -214,7 +214,7 @@ To overcome browser CORS restrictions while safeguarding against Server-Side Req
 3. **Dual-Mode Investigator Engine (`src/agent/investigatorEngine.ts`)**:
    - **Mode 1 (Deterministic Curated Fast-Path)**: Instant (<5ms) retrieval for known curated apps without network latency.
    - **Mode 2 (Dynamic Heuristic Research)**: Analyzes unfamiliar apps and documentation URLs. Extracts authorization/token URLs, detects direct API key patterns, sets `composioManagedAuthStatus: "unknown"`, and labels unstated metrics as `unverified_hypothesis`.
-   - **Mode B (AI-Assisted Research)**: Optional server-side AI integration that tries Gemini (`GEMINI_MODEL`, default `gemini-3.8-flash`), then Groq (`openai/gpt-oss-20b` by default), then OpenAI (`gpt-4o-mini`). Gemini calls time out after twelve seconds per attempt; HTTP 503 skips Gemini retries. Providers return a compact structured extraction that the server safely hydrates into the full `IntegrationReadinessGuide`; Groq uses strict JSON Schema output when supported. Each result is schema-validated and evidence-checked before it is exposed; unsupported claims remain hypotheses, and deterministic Mode 2 is the final fallback.
+   - **Mode B (AI-Assisted Research)**: Optional server-side AI integration that tries Groq (`openai/gpt-oss-20b` by default), then OpenAI (`gpt-4o-mini`). Providers return a compact structured extraction that the server safely hydrates into the full `IntegrationReadinessGuide`; Groq uses strict JSON Schema output. Each result is schema-validated and evidence-checked before it is exposed; unsupported claims remain hypotheses, and deterministic Mode 2 is the final fallback.
 
 ---
 
@@ -261,13 +261,13 @@ The Copilot maintains complete transparency regarding what was tested live, what
 
 ---
 
-## ✅ Automated Test Suite Verification (234 Tests)
+## ✅ Automated Test Suite Verification (230 Tests)
 
-The latest verification passed **234 tests across 12 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
+The latest verification passed **230 tests across 12 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
 
 ```
 Test Files  12 passed (12)
-     Tests  234 passed (234)
+     Tests  230 passed (230)
 ```
 
 ### Test Suite Structure:
@@ -308,7 +308,7 @@ Copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
 ```
-Mode B accepts `GEMINI_API_KEY`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, and `OPENAI_API_KEY`. `GEMINI_MODEL` defaults to the current stable `gemini-3.8-flash`; `GROQ_MODEL` defaults to `openai/gpt-oss-20b`, which supports Groq strict structured outputs. To use Groq as a fallback, keep Gemini configured and add a Groq key; Groq will be tried if Gemini fails. To use Groq as the primary provider, leave `GEMINI_API_KEY` unset.
+Mode B accepts `GROQ_API_KEY`, `GROQ_MODEL`, and `OPENAI_API_KEY`. `GROQ_MODEL` defaults to `openai/gpt-oss-20b`, which supports Groq strict structured outputs. Groq is tried first; OpenAI is used as the next fallback. If neither provider is configured or both fail validation, the app safely uses deterministic Mode 2.
 
 For local development, put keys in `.env` (this file is ignored by Git). For production, open the Vercel project **Settings → Environment Variables**, add `GROQ_API_KEY` with the Groq API key, select the environments you use (at minimum Production), save, and redeploy. Do not paste keys into the app, use a `VITE_` prefix, commit them, or send them in chat. If no AI provider is configured—or every provider fails—the app safely uses deterministic Mode 2.
 
@@ -327,7 +327,7 @@ npm run dev
 
 ### 5. Running the Test Suite
 ```bash
-# Run all 234 unit and E2E tests
+# Run all 230 unit and E2E tests
 npm test
 
 # Run TypeScript type check
@@ -344,7 +344,7 @@ npm run build
 ```
 composioassignment/
 ├── README.md                          # Exhaustive project documentation & audit
-├── .env.example                       # Environment template (PORT, GEMINI, OPENAI)
+├── .env.example                       # Environment template (PORT, GROQ, OPENAI)
 ├── .gitignore                         # Git ignore rules (node_modules, dist, .env)
 ├── package.json                       # Scripts and project dependencies
 ├── tsconfig.json                      # Strict TypeScript compiler options

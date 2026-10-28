@@ -58,7 +58,6 @@ function uniqueFindings(findings: InvestigationEvidenceFinding[]): Investigation
 }
 
 export function investigationEngineLabel(engine: InvestigationAnalysis["engine"]): string {
-  if (engine === "gemini_mode_b") return "Gemini · Mode B";
   if (engine === "groq_mode_b") return "Groq · Mode B";
   if (engine === "openai_mode_b") return "OpenAI · Mode B";
   return "Deterministic · Mode 2";

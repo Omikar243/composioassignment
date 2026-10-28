@@ -46,7 +46,7 @@ The system reduces developer and agent builder uncertainty when connecting user 
 | 31 | GitHub Repository Synchronization | Atomic push of all source code, assets, and configs to `https://github.com/Omikar243/composioassignment` | M5 | survey 3, ORIGINAL_REQUEST |
 | 32 | Opaque-Box E2E Test Suite (Tiers 1-4) | Requirements-driven test suite validating all 32 features, boundaries, combinations, and workloads | M6 / E2E Track | ORIGINAL_REQUEST |
 | 33 | Adversarial Coverage Hardening (Tier 5) | White-box adversarial edge testing, security validation, and fuzzing | M6 | Project Pattern |
-| 34 | Mode B: AI-Assisted Research Engine | Server-side Gemini/OpenAI route classifying retrieved docs, extracting structured claims, and validating strictly against IntegrationReadinessGuide schema | M2 | user_directive |
+| 34 | Mode B: AI-Assisted Research Engine | Server-side Groq/OpenAI route classifying retrieved docs, extracting structured claims, and validating strictly against IntegrationReadinessGuide schema | M2 | user_directive |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |

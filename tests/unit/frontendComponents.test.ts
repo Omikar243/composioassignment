@@ -110,8 +110,8 @@ describe("Milestone 4: Frontend Components & Export Engine Unit Tests", () => {
 
   describe("Evidence-linked investigation rationale", () => {
     it("derives a decision summary, detailed findings, evidence counts, and open questions", () => {
-      const analysis = buildInvestigationAnalysis(GITHUB_GUIDE, "gemini_mode_b");
-      expect(analysis.engine).toBe("gemini_mode_b");
+      const analysis = buildInvestigationAnalysis(GITHUB_GUIDE, "groq_mode_b");
+      expect(analysis.engine).toBe("groq_mode_b");
       expect(analysis.decision).toBe(GITHUB_GUIDE.readinessSummary.authPathClassification);
       expect(analysis.decisionSummary).toBe(GITHUB_GUIDE.readinessSummary.oneLineSummary);
       expect(analysis.findings.length).toBeGreaterThan(0);
@@ -126,7 +126,7 @@ describe("Milestone 4: Frontend Components & Export Engine Unit Tests", () => {
     it("exports the rationale as a labeled synthesis with source-backed findings and unresolved items", () => {
       const guide = {
         ...GITHUB_GUIDE,
-        investigationAnalysis: buildInvestigationAnalysis(GITHUB_GUIDE, "gemini_mode_b"),
+        investigationAnalysis: buildInvestigationAnalysis(GITHUB_GUIDE, "groq_mode_b"),
       };
       const markdown = generateGuideMarkdown(guide);
       expect(markdown).toContain("## Decision Rationale & Evidence Ledger");

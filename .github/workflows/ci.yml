@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Run deterministic test suite without provider keys
-        run: env -u GEMINI_API_KEY -u OPENAI_API_KEY npm test
+        run: env -u OPENAI_API_KEY npm test
 
       - name: Typecheck and build
         run: npm run build

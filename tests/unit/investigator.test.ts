@@ -315,103 +315,9 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
       });
     });
 
-    it("bypasses retries on Gemini 503 and falls back to deterministic research", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
-      const originalGroq = process.env.GROQ_API_KEY;
-      const originalOpenAI = process.env.OPENAI_API_KEY;
-      process.env.GEMINI_API_KEY = "test-gemini-key";
-      delete process.env.GROQ_API_KEY;
-      delete process.env.OPENAI_API_KEY;
-
-      const fetchMock = vi.spyOn(globalThis, "fetch")
-        .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "temporarily overloaded" } }), {
-          status: 503,
-          headers: { "Retry-After": "0" },
-        }));
-
-      try {
-        const result = await executeModeBAIAssisted({
-          appName: "Linear",
-          websiteUrl: "https://linear.app",
-          docContent: "OAuth documentation",
-        });
-
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(result.modeUsed).toBe("heuristic_research");
-        expect(result.logs.some((log) => log.includes("HTTP 503") && log.includes("Skipping retries"))).toBe(true);
-      } finally {
-        fetchMock.mockRestore();
-        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = originalGemini;
-        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
-        else process.env.GROQ_API_KEY = originalGroq;
-        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
-        else process.env.OPENAI_API_KEY = originalOpenAI;
-      }
-    });
-
-    it("uses Groq after Gemini returns HTTP 503", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
-      const originalGroq = process.env.GROQ_API_KEY;
-      const originalOpenAI = process.env.OPENAI_API_KEY;
-      process.env.GEMINI_API_KEY = "test-gemini-key";
-      process.env.GROQ_API_KEY = "test-groq-key";
-      delete process.env.OPENAI_API_KEY;
-
-      const guide = executeMode2Dynamic({
-        appName: "Linear",
-        websiteUrl: "https://linear.app",
-        docContent: "OAuth documentation",
-      });
-      const fetchMock = vi.spyOn(globalThis, "fetch")
-        .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "temporarily overloaded" } }), {
-          status: 503,
-          headers: { "Retry-After": "0" },
-        }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          choices: [{ message: { content: JSON.stringify(guide) } }],
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-
-      try {
-        const result = await executeModeBAIAssisted({
-          appName: "Linear",
-          websiteUrl: "https://linear.app",
-          docContent: "OAuth documentation",
-        });
-
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(fetchMock.mock.calls[1][0]).toBe("https://api.groq.com/openai/v1/chat/completions");
-        const requestInit = fetchMock.mock.calls[1][1] as RequestInit;
-        const requestBody = JSON.parse(String(requestInit.body));
-        expect(requestBody.model).toBe("openai/gpt-oss-20b");
-        expect(requestBody.response_format.type).toBe("json_schema");
-        expect(requestBody.response_format.json_schema.name).toBe("oauth_readiness_extraction");
-        expect(requestBody.response_format.json_schema.strict).toBe(true);
-        expect((requestInit.headers as Record<string, string>).Authorization).toBe("Bearer test-groq-key");
-        expect(result.modeUsed).toBe("ai_assisted");
-        expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
-        expect(result.logs.some((log) => log.includes("HTTP 503") && log.includes("Skipping retries"))).toBe(true);
-        expect(result.logs.some((log) => log.includes("Querying Groq API"))).toBe(true);
-        expect(result.logs.join(" ")).not.toContain("test-groq-key");
-      } finally {
-        fetchMock.mockRestore();
-        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = originalGemini;
-        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
-        else process.env.GROQ_API_KEY = originalGroq;
-        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
-        else process.env.OPENAI_API_KEY = originalOpenAI;
-      }
-    });
-
     it("can use Groq as the only configured Mode B provider", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
       const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
-      delete process.env.GEMINI_API_KEY;
       process.env.GROQ_API_KEY = "test-groq-key";
       delete process.env.OPENAI_API_KEY;
 
@@ -439,8 +345,6 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(result.guide.investigationAnalysis?.engine).toBe("groq_mode_b");
       } finally {
         fetchMock.mockRestore();
-        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = originalGemini;
         if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
         else process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
@@ -449,10 +353,8 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
     });
 
     it("hydrates a compact Groq extraction into a schema-valid AI-assisted guide", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
       const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
-      delete process.env.GEMINI_API_KEY;
       process.env.GROQ_API_KEY = "test-groq-key";
       delete process.env.OPENAI_API_KEY;
 
@@ -484,108 +386,6 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(validateIntegrationReadinessGuide(result.guide).isValid).toBe(true);
       } finally {
         fetchMock.mockRestore();
-        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = originalGemini;
-        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
-        else process.env.GROQ_API_KEY = originalGroq;
-        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
-        else process.env.OPENAI_API_KEY = originalOpenAI;
-      }
-    });
-
-    it("aborts a Gemini request after twelve seconds", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
-      const originalGroq = process.env.GROQ_API_KEY;
-      const originalOpenAI = process.env.OPENAI_API_KEY;
-      process.env.GEMINI_API_KEY = "test-gemini-key";
-      delete process.env.GROQ_API_KEY;
-      delete process.env.OPENAI_API_KEY;
-      vi.useFakeTimers();
-
-      const guide = executeMode2Dynamic({
-        appName: "Linear",
-        websiteUrl: "https://linear.app",
-        docContent: "OAuth documentation",
-      });
-      let requestSignal: AbortSignal | undefined;
-      const fetchMock = vi.spyOn(globalThis, "fetch")
-        .mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
-          requestSignal = init?.signal || undefined;
-          requestSignal?.addEventListener(
-            "abort",
-            () => reject(new DOMException("The operation was aborted.", "AbortError")),
-            { once: true }
-          );
-        }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          candidates: [{ content: { parts: [{ text: JSON.stringify(guide) }] } }],
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-
-      try {
-        const resultPromise = executeModeBAIAssisted({
-          appName: "Linear",
-          websiteUrl: "https://linear.app",
-          docContent: "OAuth documentation",
-        });
-
-        await vi.advanceTimersByTimeAsync(12_000);
-        expect(requestSignal?.aborted).toBe(true);
-        await vi.advanceTimersByTimeAsync(1_000);
-        const result = await resultPromise;
-
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(result.modeUsed).toBe("ai_assisted");
-      } finally {
-        fetchMock.mockRestore();
-        vi.useRealTimers();
-        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = originalGemini;
-        if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
-        else process.env.GROQ_API_KEY = originalGroq;
-        if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
-        else process.env.OPENAI_API_KEY = originalOpenAI;
-      }
-    });
-
-    it("retries once after a Gemini request timeout", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
-      const originalGroq = process.env.GROQ_API_KEY;
-      const originalOpenAI = process.env.OPENAI_API_KEY;
-      process.env.GEMINI_API_KEY = "test-gemini-key";
-      delete process.env.GROQ_API_KEY;
-      delete process.env.OPENAI_API_KEY;
-
-      const guide = executeMode2Dynamic({
-        appName: "Linear",
-        websiteUrl: "https://linear.app",
-        docContent: "OAuth documentation",
-      });
-      const fetchMock = vi.spyOn(globalThis, "fetch")
-        .mockRejectedValueOnce(new Error("simulated request timeout"))
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          candidates: [{ content: { parts: [{ text: JSON.stringify(guide) }] } }],
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }));
-
-      try {
-        const result = await executeModeBAIAssisted({
-          appName: "Linear",
-          websiteUrl: "https://linear.app",
-          docContent: "OAuth documentation",
-        });
-
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(result.modeUsed).toBe("ai_assisted");
-        expect(result.logs.some((log) => log.includes("network/request error on attempt 1/2"))).toBe(true);
-      } finally {
-        fetchMock.mockRestore();
-        if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = originalGemini;
         if (originalGroq === undefined) delete process.env.GROQ_API_KEY;
         else process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY;
@@ -594,11 +394,9 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
     });
 
     it("gracefully falls back to deterministic research when no API keys are configured", async () => {
-      const originalGemini = process.env.GEMINI_API_KEY;
       const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
 
-      delete process.env.GEMINI_API_KEY;
       delete process.env.GROQ_API_KEY;
       delete process.env.OPENAI_API_KEY;
 
@@ -615,7 +413,6 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(result.logs.some((l) => l.includes("deterministic"))).toBe(true);
         expect(validateIntegrationReadinessGuide(result.guide).isValid).toBe(true);
       } finally {
-        if (originalGemini) process.env.GEMINI_API_KEY = originalGemini;
         if (originalGroq) process.env.GROQ_API_KEY = originalGroq;
         if (originalOpenAI) process.env.OPENAI_API_KEY = originalOpenAI;
       }
