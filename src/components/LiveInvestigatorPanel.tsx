@@ -98,13 +98,17 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
         candidate.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedAppName
       )
     );
-    const catalogBaseline: CatalogAuthBaseline | undefined = initialCatalogBaseline || (matchedCatalogApp
+    const initialNameNormalized = initialAppName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const initialBaselineMatches = Boolean(initialCatalogBaseline) && initialNameNormalized === normalizedAppName;
+    const catalogBaseline: CatalogAuthBaseline | undefined = matchedCatalogApp
       ? {
           authPath: matchedCatalogApp.authPath,
           supportedAuthSchemes: [...matchedCatalogApp.supportedAuthSchemes],
           authDocUrl: matchedCatalogApp.authDocUrl,
         }
-      : undefined);
+      : initialBaselineMatches
+        ? initialCatalogBaseline
+        : undefined;
     const targetUrl = matchedCatalogApp?.authDocUrl || initialCatalogBaseline?.authDocUrl ||
       resolveDocumentationSourceUrl(appInput, urlInput);
 
