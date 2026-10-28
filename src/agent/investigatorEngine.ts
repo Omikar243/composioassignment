@@ -1021,7 +1021,7 @@ export function stripPrivateReasoningFields<T>(input: T): { value: T; removedCou
 // 4. Mode B: AI-Assisted Research with Fallback
 // ============================================================================
 
-const GEMINI_REQUEST_TIMEOUT_MS = 4_000;
+const GEMINI_REQUEST_TIMEOUT_MS = 12_000;
 const COMPATIBLE_AI_REQUEST_TIMEOUT_MS = 4_000;
 type CompatibleProviderEngine = "groq_mode_b" | "openai_mode_b";
 
@@ -1313,11 +1313,17 @@ export async function executeModeBAIAssisted(
         } catch (error) {
           const timeLeft = deadline - Date.now();
           if (attempt >= maxAttempts || timeLeft <= 0) {
-            logs.push(`Gemini request failed on attempt ${attempt}/${maxAttempts}; moving to configured provider fallbacks.`);
+            const reason = error instanceof Error && error.name === "AbortError"
+              ? `timed out after ${Math.min(remainingMs, perAttemptTimeoutMs)}ms`
+              : "network/request error";
+            logs.push(`Gemini request ${reason} on attempt ${attempt}/${maxAttempts}; moving to configured provider fallbacks.`);
             break;
           }
           const delayMs = Math.min(750 + Math.floor(Math.random() * 250), Math.max(0, timeLeft - 1));
-          logs.push(`Gemini request failed on attempt ${attempt}/${maxAttempts}. Retrying once in ${delayMs}ms.`);
+          const reason = error instanceof Error && error.name === "AbortError"
+            ? `timed out after ${Math.min(remainingMs, perAttemptTimeoutMs)}ms`
+            : "network/request error";
+          logs.push(`Gemini request ${reason} on attempt ${attempt}/${maxAttempts}. Retrying once in ${delayMs}ms.`);
           await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
           continue;
         } finally {

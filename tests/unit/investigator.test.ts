@@ -493,7 +493,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
       }
     });
 
-    it("aborts a Gemini request after four seconds", async () => {
+    it("aborts a Gemini request after twelve seconds", async () => {
       const originalGemini = process.env.GEMINI_API_KEY;
       const originalGroq = process.env.GROQ_API_KEY;
       const originalOpenAI = process.env.OPENAI_API_KEY;
@@ -531,7 +531,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
           docContent: "OAuth documentation",
         });
 
-        await vi.advanceTimersByTimeAsync(4_000);
+        await vi.advanceTimersByTimeAsync(12_000);
         expect(requestSignal?.aborted).toBe(true);
         await vi.advanceTimersByTimeAsync(1_000);
         const result = await resultPromise;
@@ -581,7 +581,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(result.modeUsed).toBe("ai_assisted");
-        expect(result.logs.some((log) => log.includes("request failed on attempt 1/2"))).toBe(true);
+        expect(result.logs.some((log) => log.includes("network/request error on attempt 1/2"))).toBe(true);
       } finally {
         fetchMock.mockRestore();
         if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
