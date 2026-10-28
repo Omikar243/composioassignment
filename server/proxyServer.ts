@@ -14,6 +14,7 @@ import cors from "cors";
 import * as cheerio from "cheerio";
 import TurndownService from "turndown";
 import { validateSsrfTarget } from "../src/agent/sanitizer.js";
+import type { AuthPathClassification, CatalogAuthBaseline, ConcreteAuthScheme } from "../src/types/guide.js";
 import {
   enforceDocumentEvidence,
   investigateApp,
@@ -434,7 +435,7 @@ app.post("/api/retrieve", handleRetrieve);
 // Route 3: POST /api/investigate
 // ============================================================================
 export async function handleInvestigate(req: Request, res: Response) {
-  const { appName, websiteUrl, mode, forceMode, docContent } = req.body;
+  const { appName, websiteUrl, mode, forceMode, docContent, catalogBaseline } = req.body;
 
   if (!appName || typeof appName !== "string" || appName.trim() === "") {
     res.status(400).json({
@@ -477,10 +478,26 @@ export async function handleInvestigate(req: Request, res: Response) {
       );
     }
 
+    const validAuthPaths: AuthPathClassification[] = ["oauth_required", "hybrid_oauth_or_direct", "direct_credential_only"];
+    const validSchemes: ConcreteAuthScheme[] = ["OAUTH2", "OAUTH1", "API_KEY", "BEARER_TOKEN", "BASIC_AUTH"];
+    const resolvedCatalogBaseline: CatalogAuthBaseline | undefined =
+      catalogBaseline && typeof catalogBaseline === "object" &&
+      validAuthPaths.includes(catalogBaseline.authPath) &&
+      Array.isArray(catalogBaseline.supportedAuthSchemes)
+        ? {
+            authPath: catalogBaseline.authPath,
+            supportedAuthSchemes: catalogBaseline.supportedAuthSchemes.filter(
+              (scheme: unknown): scheme is ConcreteAuthScheme => validSchemes.includes(scheme as ConcreteAuthScheme)
+            ),
+            ...(typeof catalogBaseline.authDocUrl === "string" ? { authDocUrl: catalogBaseline.authDocUrl } : {}),
+          }
+        : undefined;
+
     const result = await investigateApp({
       appName: appName.trim(),
       websiteUrl: resolvedWebsiteUrl,
       docContent: resolvedDocContent,
+      catalogBaseline: resolvedCatalogBaseline,
       mode: mode === "ai_assisted" ? "ai_assisted" : "deterministic",
       forceMode: forceMode || "auto",
     });
