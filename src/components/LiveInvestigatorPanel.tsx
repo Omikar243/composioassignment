@@ -39,6 +39,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
 }) => {
   const [appInput, setAppInput] = useState(initialAppName);
   const [urlInput, setUrlInput] = useState(initialWebsiteUrl);
+  const [isUrlDirty, setIsUrlDirty] = useState(false);
   const [mode, setMode] = useState<"deterministic" | "ai_assisted">("deterministic");
   const [isRunning, setIsRunning] = useState(false);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
@@ -47,6 +48,12 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [proxyStatus, setProxyStatus] = useState<"checking" | "online" | "offline">("checking");
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setAppInput(initialAppName);
+    setUrlInput(initialWebsiteUrl);
+    setIsUrlDirty(false);
+  }, [initialAppName, initialWebsiteUrl]);
 
   useEffect(() => {
     let active = true;
@@ -70,6 +77,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
   const applyPreset = (name: string, url: string) => {
     setAppInput(name);
     setUrlInput(url);
+    setIsUrlDirty(false);
   };
 
   const handleRunInvestigation = async () => {
@@ -111,9 +119,42 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       : initialBaselineMatches
         ? initialCatalogBaseline
         : undefined;
-    const targetUrl = matchedCatalogApp?.authDocUrl ||
-      (initialBaselineMatches ? initialCatalogBaseline?.authDocUrl : undefined) ||
-      resolveDocumentationSourceUrl(appInput, urlInput);
+    const catalogDefaultDocUrl = matchedCatalogApp?.authDocUrl || (initialBaselineMatches ? initialCatalogBaseline?.authDocUrl : undefined);
+    const catalogDefaultWebsiteUrl = matchedCatalogApp?.websiteUrl;
+
+    const normalizeUrlForMatch = (u?: string) => {
+      if (!u) return "";
+      try {
+        const parsed = new URL(u.trim());
+        return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`.toLowerCase();
+      } catch {
+        return u.trim().toLowerCase().replace(/\/+$/, "");
+      }
+    };
+
+    const trimmedUrlInput = urlInput.trim();
+    const isMatchingCatalogDefault = Boolean(
+      trimmedUrlInput &&
+      ((catalogDefaultDocUrl && normalizeUrlForMatch(trimmedUrlInput) === normalizeUrlForMatch(catalogDefaultDocUrl)) ||
+       (catalogDefaultWebsiteUrl && normalizeUrlForMatch(trimmedUrlInput) === normalizeUrlForMatch(catalogDefaultWebsiteUrl)))
+    );
+
+    // A Documentation URL is considered a user-entered override if:
+    // 1. It is non-empty, AND
+    // 2. Either the user explicitly edited it (isUrlDirty) while differing from catalog default,
+    //    OR there is no catalog default and it was typed in.
+    const isUserEnteredDocUrl = Boolean(
+      trimmedUrlInput &&
+      !isMatchingCatalogDefault &&
+      (isUrlDirty || !catalogDefaultDocUrl)
+    );
+
+    // Authoritative precedence: user-entered documentation URL takes authoritative precedence over any matched catalog app URL for targetUrl
+    const targetUrl = isUserEnteredDocUrl
+      ? trimmedUrlInput
+      : (catalogDefaultDocUrl ||
+         catalogDefaultWebsiteUrl ||
+         resolveDocumentationSourceUrl(appInput, trimmedUrlInput));
 
     setTerminalLogs([
       `[${timestamp}] [TRIAGE] Initializing live investigation for '${targetName}'...`,
@@ -142,13 +183,19 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       const response = await fetch("/api/investigate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appName: targetName, websiteUrl: targetUrl, userOverrideUrl: urlInput.trim() || undefined, mode, catalogBaseline }),
+        body: JSON.stringify({
+          appName: targetName,
+          websiteUrl: targetUrl,
+          userOverrideUrl: isUserEnteredDocUrl ? trimmedUrlInput : undefined,
+          mode,
+          catalogBaseline,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (Array.isArray(payload.logs) && payload.logs.length > 0) {
         setTerminalLogs((prev) => [...prev, ...payload.logs]);
       }
-      if (!response.ok || !payload.success || payload.retrievalStatus === "failed") {
+      if (!response.ok || !payload.success || (payload.selectedSource?.isOverride && payload.retrievalStatus === "failed")) {
         throw new Error(payload.error || `Investigation API returned HTTP ${response.status}`);
       }
       const res = payload as InvestigationResponse;
@@ -246,34 +293,33 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="investigator-app-input" className="block text-xs font-medium text-slate-300 mb-1.5">
-              App Name or Documentation URL:
+              App Name:
             </label>
             <input
               id="investigator-app-input"
               type="text"
               value={appInput}
               onChange={(e) => setAppInput(e.target.value)}
-              placeholder="e.g. Linear, HubSpot, or https://developer.calendly.com/..."
+              placeholder="e.g. Linear, HubSpot, or Supabase"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition"
             />
           </div>
 
           <div>
             <label htmlFor="investigator-doc-url-input" className="block text-xs font-medium text-slate-300 mb-1.5">
-              Documentation URL (Optional override):
+              Documentation URL:
             </label>
             <input
               id="investigator-doc-url-input"
               type="text"
               value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
+              onChange={(e) => {
+                setUrlInput(e.target.value);
+                setIsUrlDirty(true);
+              }}
               placeholder="https://docs.provider.com/api/auth"
-              aria-describedby="investigator-doc-url-help"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition"
             />
-            <p id="investigator-doc-url-help" className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
-              If provided, this URL is fetched instead of a URL in the first field.
-            </p>
           </div>
         </div>
 

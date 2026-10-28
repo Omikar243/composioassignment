@@ -5,6 +5,8 @@
 
 import * as cheerio from "cheerio";
 import { validateSsrfTarget } from "./sanitizer";
+import { findProviderInRegistry } from "../data/providerRegistry";
+import { CATALOG_100_APPS } from "../data/catalog100";
 
 export interface DiscoveryQuery {
   appName: string;
@@ -17,6 +19,7 @@ export interface DiscoveredCandidate {
   snippet?: string;
   sourceProvider: "duckduckgo" | "brave" | "fixture" | string;
   confidenceScore: number;
+  isAuthenticDomain?: boolean;
 }
 
 export interface SearchDiscoveryProvider {
@@ -82,6 +85,127 @@ export function isDisallowedDiscoveryDomain(candidateUrl: string): boolean {
     );
   } catch {
     return true; // Malformed URLs are considered disallowed
+  }
+}
+
+export function extractRootDomain(hostname: string): string {
+  const cleanHost = hostname.toLowerCase().replace(/^www\./, "").replace(/:\d+$/, "");
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(cleanHost) || cleanHost === "localhost") {
+    return cleanHost;
+  }
+  const parts = cleanHost.split(".");
+  if (parts.length <= 2) {
+    return cleanHost;
+  }
+  const twoPartSuffixes = [
+    "co.uk", "org.uk", "gov.uk", "ac.uk",
+    "com.au", "net.au", "org.au",
+    "co.jp", "ne.jp", "co.nz", "com.br",
+  ];
+  const lastTwo = parts.slice(-2).join(".");
+  if (twoPartSuffixes.includes(lastTwo) && parts.length >= 3) {
+    return parts.slice(-3).join(".");
+  }
+  return parts.slice(-2).join(".");
+}
+
+export function isAuthenticProviderDomain(candidateUrl: string, query: DiscoveryQuery): boolean {
+  try {
+    const candParsed = new URL(candidateUrl);
+    const candHost = candParsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (!candHost) return false;
+    const candRoot = extractRootDomain(candHost);
+
+    // 1. Match against explicit query websiteUrl if provided
+    if (query.websiteUrl) {
+      try {
+        const queryHost = new URL(query.websiteUrl).hostname.toLowerCase().replace(/^www\./, "");
+        const queryRoot = extractRootDomain(queryHost);
+        if (candHost === queryHost || candHost.endsWith("." + queryHost) || candRoot === queryRoot) {
+          return true;
+        }
+      } catch {
+        // ignore malformed query.websiteUrl
+      }
+    }
+
+    // 2. Match against Provider Registry
+    const registryEntry = findProviderInRegistry(query.appName);
+    if (registryEntry) {
+      if (registryEntry.websiteUrl) {
+        try {
+          const regHost = new URL(registryEntry.websiteUrl).hostname.toLowerCase().replace(/^www\./, "");
+          const regRoot = extractRootDomain(regHost);
+          if (candHost === regHost || candHost.endsWith("." + regHost) || candRoot === regRoot) {
+            return true;
+          }
+        } catch {}
+      }
+      if (registryEntry.authDocUrl) {
+        try {
+          const docHost = new URL(registryEntry.authDocUrl).hostname.toLowerCase().replace(/^www\./, "");
+          const docRoot = extractRootDomain(docHost);
+          if (candHost === docHost || candHost.endsWith("." + docHost) || candRoot === docRoot) {
+            return true;
+          }
+        } catch {}
+      }
+      if (registryEntry.aliases && registryEntry.aliases.length > 0) {
+        for (const alias of registryEntry.aliases) {
+          try {
+            const aliasHost = alias.startsWith("http")
+              ? new URL(alias).hostname.toLowerCase().replace(/^www\./, "")
+              : alias.toLowerCase().replace(/^www\./, "");
+            const aliasRoot = extractRootDomain(aliasHost);
+            if (candHost === aliasHost || candHost.endsWith("." + aliasHost) || candRoot === aliasRoot) {
+              return true;
+            }
+          } catch {}
+        }
+      }
+      return false; // Known registry provider, candidate did not match official domain
+    }
+
+    // 3. Match against Catalog 100 Apps
+    const cleanAppName = query.appName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const catalogApp = CATALOG_100_APPS.find((app) => {
+      const candidates = [app.name, app.appName, app.id, app.appId];
+      return candidates.some((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "") === cleanAppName);
+    });
+    if (catalogApp) {
+      if (catalogApp.websiteUrl) {
+        try {
+          const catHost = new URL(catalogApp.websiteUrl).hostname.toLowerCase().replace(/^www\./, "");
+          const catRoot = extractRootDomain(catHost);
+          if (candHost === catHost || candHost.endsWith("." + catHost) || candRoot === catRoot) {
+            return true;
+          }
+        } catch {}
+      }
+      if (catalogApp.authDocUrl) {
+        try {
+          const docHost = new URL(catalogApp.authDocUrl).hostname.toLowerCase().replace(/^www\./, "");
+          const docRoot = extractRootDomain(docHost);
+          if (candHost === docHost || candHost.endsWith("." + docHost) || candRoot === docRoot) {
+            return true;
+          }
+        } catch {}
+      }
+      return false; // Known catalog app, candidate did not match official domain
+    }
+
+    // 4. Fallback brand token matching for unfamiliar / unlisted apps
+    const candBaseName = candRoot.split(".")[0];
+    if (candBaseName === cleanAppName || candBaseName.startsWith(cleanAppName) || cleanAppName.startsWith(candBaseName)) {
+      return true;
+    }
+    if (candHost.split(".").includes(cleanAppName)) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
   }
 }
 
@@ -341,12 +465,15 @@ export class WebDiscoveryPipeline {
       this.providers = options.providers;
     } else {
       const allowLive = options?.allowLiveNetwork ?? (process.env.LIVE_NETWORK_DISCOVERY === "true");
-      const list: SearchDiscoveryProvider[] = [new FixtureDiscoveryProvider()];
+      const list: SearchDiscoveryProvider[] = [];
       if (allowLive) {
         if (process.env.BRAVE_SEARCH_API_KEY) {
           list.push(new BraveSearchDiscoveryProvider());
         }
         list.push(new DuckDuckGoDiscoveryProvider());
+        list.push(new FixtureDiscoveryProvider());
+      } else {
+        list.push(new FixtureDiscoveryProvider());
       }
       this.providers = list;
     }
@@ -362,14 +489,28 @@ export class WebDiscoveryPipeline {
       try {
         const candidates = await provider.search(query);
         for (const cand of candidates) {
-          if (!isDisallowedDiscoveryDomain(cand.url)) {
-            const ssrf = validateSsrfTarget(cand.url);
-            if (ssrf.isValid && ssrf.allowed) {
-              all.push(cand);
-            }
+          // 1. Disallowed Domain Blacklist Filtering
+          if (isDisallowedDiscoveryDomain(cand.url)) {
+            continue;
           }
+
+          // 2. SSRF Validation
+          const ssrf = validateSsrfTarget(cand.url);
+          if (!ssrf.isValid || !ssrf.allowed) {
+            continue;
+          }
+
+          // 3. Official Provider Domain Authenticity Verification
+          if (!isAuthenticProviderDomain(cand.url, query)) {
+            continue;
+          }
+
+          all.push({
+            ...cand,
+            isAuthenticDomain: true,
+          });
         }
-        if (all.length > 0) break; // Return first provider that produced safe results
+        if (all.length > 0) break; // Return first provider that produced authentic safe results
       } catch {
         continue;
       }

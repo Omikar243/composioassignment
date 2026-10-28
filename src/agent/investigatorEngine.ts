@@ -20,6 +20,7 @@ import {
   UndeterminedAuthSpec,
   ConcreteAuthScheme,
   AuthPathClassification,
+  ClassificationProvenance,
   CatalogBaseline,
   CatalogAuthBaseline,
   ManagedAuthAvailability,
@@ -414,13 +415,17 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const baseline = input.catalogBaseline;
   const registryEntry = findProviderInRegistry(name);
 
+  const hasCustomHeaderEvidence =
+    Boolean(registryEntry?.customTransportHeaders?.some((h) => rawText.toLowerCase().includes(h.headerName.toLowerCase())));
+
   const explicitHybridEvidence =
     /personal access token|private app token|private app access token|api token/i.test(rawText) &&
     /oauth(?:\s*2\.0)?|authorization_code|public app|multi-tenant/i.test(rawText);
   const explicitDirectEvidence =
-    /(?:api key|api token|bearer token|personal access token)/i.test(rawText) &&
-    /(?:authorization:\s*bearer|x-api-key|apikey|authenticate|authentication|api request)/i.test(rawText) &&
-    !/oauth.{0,80}(?:required|must|only)|authorization code flow required/i.test(rawText);
+    hasCustomHeaderEvidence ||
+    (/(?:api key|api token|bearer token|personal access token)/i.test(rawText) &&
+      /(?:authorization:\s*bearer|x-api-key|apikey|authenticate|authentication|api request)/i.test(rawText) &&
+      !/oauth.{0,80}(?:required|must|only)|authorization code flow required/i.test(rawText));
   const explicitOAuthEvidence =
     /(?:oauth\s*2\.0|oauth2\b|authorization[ _-]code|client_id.{0,80}(?:redirect_uri|client_secret)|authorization endpoint|token endpoint|oauth\s+(?:flow|grant|endpoint|token|dance|application|app\b)|register(?:ing)?\s+(?:an?\s+)?oauth)/i.test(
       rawText
@@ -429,6 +434,9 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       !/(?:sign in with|log in with|sso).{0,40}oauth/i.test(rawText) &&
       !/oauth status/i.test(rawText) &&
       /(?:developer|api|endpoint|token|secret|client|scope|redirect_uri)/i.test(rawText));
+
+  const hasAuthEvidence = explicitHybridEvidence || explicitDirectEvidence || explicitOAuthEvidence;
+
   const hybridProviders = [
     "github", "gitlab", "jira", "confluence", "bitbucket", "circleci",
     "discord", "notion", "asana", "trello", "clickup", "monday", "airtable",
@@ -445,19 +453,43 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const oauthProviders = ["linear", "calendly"];
 
   let authPath: AuthPathClassification;
-  if (baseline) {
+  let classificationProvenance: ClassificationProvenance;
+
+  if (hasAuthEvidence) {
+    classificationProvenance = "evidence_derived";
+    if (explicitHybridEvidence) {
+      authPath = "hybrid_oauth_or_direct";
+    } else if (explicitDirectEvidence) {
+      authPath = "direct_credential_only";
+    } else if (explicitOAuthEvidence) {
+      authPath = "oauth_required";
+    } else if (baseline) {
+      authPath = baseline.authPath;
+    } else if (registryEntry) {
+      authPath = registryEntry.defaultClassification;
+    } else {
+      authPath = "undetermined";
+      classificationProvenance = "undetermined";
+    }
+  } else if (baseline) {
     authPath = baseline.authPath;
+    classificationProvenance = "baseline_fallback";
   } else if (registryEntry) {
     authPath = registryEntry.defaultClassification;
-  } else if (explicitHybridEvidence || hybridProviders.some((provider) => lowerName.includes(provider))) {
+    classificationProvenance = "baseline_fallback";
+  } else if (hybridProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "hybrid_oauth_or_direct";
-  } else if (explicitDirectEvidence || directProviders.some((provider) => lowerName.includes(provider))) {
+    classificationProvenance = "baseline_fallback";
+  } else if (directProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "direct_credential_only";
-  } else if (explicitOAuthEvidence || oauthProviders.some((provider) => lowerName.includes(provider))) {
+    classificationProvenance = "baseline_fallback";
+  } else if (oauthProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "oauth_required";
+    classificationProvenance = "baseline_fallback";
   } else {
     // When no baseline, no registry match, and no explicit evidence in documentation -> undetermined
     authPath = "undetermined";
+    classificationProvenance = "undetermined";
   }
 
   // Step 2: Extract endpoints only from known provider facts or retrieved text.
@@ -1037,6 +1069,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     composioManagedAuthStatus,
     readinessSummary: {
       authPathClassification: authPath,
+      classificationProvenance,
       oauthNecessityBanner:
         authPath === "undetermined"
           ? "Authentication method could not be determined from the available documentation."
@@ -1047,11 +1080,13 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           : "User connections require registering and configuring an OAuth application with the provider.",
       activeSetupTime,
       approvalWaitTime,
-      oneLineSummary: baseline
-        ? `Catalog baseline ${authPath.replace(/_/g, " ")} classification for ${name}; dynamic analysis preserves the catalog path unless provider-specific authentication evidence is reviewed.`
-        : authPath === "undetermined" || rawText.trim().length < 80
+      oneLineSummary: classificationProvenance === "baseline_fallback"
+        ? (baseline
+            ? `Baseline fallback ${authPath.replace(/_/g, " ")} classification for ${name}; retrieved documentation lacked authentication evidence, preserving catalog baseline.`
+            : `Baseline fallback ${authPath.replace(/_/g, " ")} classification for ${name}; retrieved documentation lacked authentication evidence, retaining provider registry baseline.`)
+        : classificationProvenance === "undetermined" || rawText.trim().length < 80
           ? `Provisional ${authPath.replace(/_/g, " ")} classification for ${name}; insufficient documentation was retrieved to confirm the authentication path. Verify against official auth documentation.`
-          : `Evidence-based ${authPath.replace(/_/g, " ")} classification for ${name}; verify auth support, endpoints, and provider review requirements against current documentation.`,
+          : `Evidence-based ${authPath.replace(/_/g, " ")} classification for ${name}; verified against retrieved documentation.`,
     },
     prerequisites: {
       value: [

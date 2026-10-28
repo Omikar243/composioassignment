@@ -24,7 +24,9 @@ export interface ProviderRegistryEntry {
   aliases: string[];
   authDocUrl: string;
   websiteUrl: string;
+  /** Baseline fallback classification when documentation lacks authentic authentication evidence */
   defaultClassification: AuthPathClassification;
+  defaultProvenance?: "baseline_fallback";
   supportedAuthSchemes: ConcreteAuthScheme[];
   protocols: ("OAUTH2" | "OAUTH1" | "API_KEY" | "BEARER_TOKEN" | "CUSTOM_HEADER")[];
   credentialTypes: CredentialType[];

@@ -4,7 +4,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61dafb.svg?logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite)](https://vitejs.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg?logo=tailwindcss)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-715%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-827%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
 [![TypeCheck](https://img.shields.io/badge/tsc-0%20errors-brightgreen.svg)](https://www.typescriptlang.org/)
 > An evidence-first research tool for the authentication paths AI-agent builders encounter: OAuth, direct credentials, and hybrid setups. It keeps provider endpoints separate from Composio callback guidance and distinguishes documented claims from hypotheses.
 
@@ -37,7 +37,7 @@ GitHub Actions runs the deterministic test suite and production build on pushes 
 8. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
 9. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
 10. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
-11. [Automated Test Suite Verification (715 Tests)](#-automated-test-suite-verification-715-tests)
+11. [Automated Test Suite Verification (827 Tests)](#-automated-test-suite-verification-827-tests)
 12. [Quickstart & Local Development](#-quickstart--local-development)
 13. [Project Directory Layout](#-project-directory-layout)
 
@@ -71,7 +71,7 @@ This matrix maps every explicit evaluation criterion and prompt requirement from
 | **7. Live Dynamic Investigation Flow**<br>• Submit name or website of an app<br>• Generate shareable guide in real time | • **Live Investigator (`src/components/LiveInvestigatorPanel.tsx`)**: Accepts any custom app name or arbitrary URL.<br>• **SSRF-Safe Retrieval Backend (`/api/retrieve` + `server/proxyServer.ts`)**: Blocks private RFC 1918 subnets, cloud metadata (`169.254.169.254`), and loopback addresses; strips HTML bloat with Cheerio/Turndown within a 15k-character budget.<br>• **Dual-Mode Engine (`src/agent/investigatorEngine.ts`)**:<br>&nbsp;&nbsp;• *Mode 1*: Instant (<5ms) retrieval for curated apps.<br>&nbsp;&nbsp;• *Mode 2*: Deterministic heuristic extraction for endpoints, scopes, PKCE, and auth model.<br>&nbsp;&nbsp;• *Mode B*: Server-side AI-assisted extraction (Groq `openai/gpt-oss-20b` / OpenAI `gpt-4o-mini`) with schema validation and automatic deterministic fallback. | Validated in `proxyServer.test.ts` and `investigator.test.ts`. |
 | **8. Epistemic Evidence & Myth Corrections**<br>• Clear about what was tested<br>• What sources support<br>• What remains uncertain | • **3-Tier Epistemic Claim System** (`Traceable<T>`):<br>&nbsp;&nbsp;• `tested_live` (Emerald badge): Directly executed in live developer portals.<br>&nbsp;&nbsp;• `documented_not_tested` (Blue badge): Verbatim quote from canonical provider documentation.<br>&nbsp;&nbsp;• `unverified_hypothesis` (Amber badge): Inferred heuristic; explicitly discloses what remains unverified.<br>• **Verification Audit Tab (`src/components/VerificationAuditView.tsx`)**: Dedicated forensic audit ledger showing tested portal actions, documented facts, myth corrections, and open uncertainties. | Full interactive UI tab and programmatic audit ledger in `verificationAudit.ts`. |
 | **9. Isolated Endpoints & Callback UX**<br>• Provider OAuth app vs Composio managed auth | • **Two-Zone Isolated Display (`EndpointsAndCallbackBox.tsx`)** preventing the #1 developer mistake (pasting provider endpoints as redirect URIs):<br>&nbsp;&nbsp;• **Zone A (Purple Glass)**: Provider Endpoints (Authorization URL, Token URL, PKCE) — explicitly labelled as endpoints your app calls.<br>&nbsp;&nbsp;• **Zone B (Cyan Glass)**: Composio Callback Guidance — explicitly labelled as the Redirect URI to paste into the provider portal.<br>• **Managed Auth Availability**: Clear indicator (`available`, `bring_your_own_required`, `unknown`). | Tested in `frontendComponents.test.ts` and `tier1_features.test.ts`. |
-| **10. Production Quality, Tests & Deliverables**<br>• Working link & repository<br>• Short README with setup & decisions<br>• Zero credentials committed | • **Live Vercel Deployment**: [https://composioassignment.vercel.app/](https://composioassignment.vercel.app/)<br>• **GitHub Repository**: [https://github.com/Omikar243/composioassignment](https://github.com/Omikar243/composioassignment)<br>• **Zero Credentials Committed**: Zero exposed API keys in code or git history.<br>• **Test Suite**: **242 tests passing across 13 test suites (100% pass rate)** in Vitest + 0 TypeScript errors.<br>• **Exhaustive Documentation**: Setup instructions, architecture diagram, design decisions, verification audit, and limitations. | CI workflow (`.github/workflows/ci.yml`) runs full test suite and build on every push. |
+| **10. Production Quality, Tests & Deliverables**<br>• Working link & repository<br>• Short README with setup & decisions<br>• Zero credentials committed | • **Live Vercel Deployment**: [https://composioassignment.vercel.app/](https://composioassignment.vercel.app/)<br>• **GitHub Repository**: [https://github.com/Omikar243/composioassignment](https://github.com/Omikar243/composioassignment)<br>• **Zero Credentials Committed**: Zero exposed API keys in code or git history.<br>• **Test Suite**: **827 tests passing across 19 test suites (100% pass rate)** in Vitest + 0 TypeScript errors.<br>• **Exhaustive Documentation**: Setup instructions, architecture diagram, design decisions, verification audit, and limitations. | CI workflow (`.github/workflows/ci.yml`) runs full test suite and build on every push. |
 
 ---
 
@@ -371,13 +371,13 @@ The Copilot maintains complete transparency regarding what was tested live, what
 
 ---
 
-## ✅ Automated Test Suite Verification (715 Tests)
+## ✅ Automated Test Suite Verification (827 Tests)
 
-The latest verification passed **715 tests across 16 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
+The latest verification passed **827 tests across 19 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
 
 ```
-Test Files  16 passed (16)
-     Tests  715 passed (715)
+Test Files  19 passed (19)
+     Tests  827 passed (827)
 ```
 
 ### Test Suite Structure:
@@ -441,7 +441,7 @@ npm run dev
 
 ### 5. Running the Test Suite
 ```bash
-# Run all 230 unit and E2E tests
+# Run all 827 unit and E2E tests
 npm test
 
 # Run TypeScript type check

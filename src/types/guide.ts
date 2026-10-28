@@ -52,6 +52,11 @@ export type AuthPathClassification =
   | "direct_credential_only" // Direct API key, token, or basic auth; zero OAuth endpoints exist
   | "undetermined";
 
+export type ClassificationProvenance =
+  | "evidence_derived"
+  | "baseline_fallback"
+  | "undetermined";
+
 // Credential Type Taxonomy
 export type CredentialType =
   | "personal_access_token"
@@ -196,6 +201,7 @@ export interface InvestigationEvidenceFinding {
 export interface InvestigationAnalysis {
   engine: "groq_mode_b" | "openai_mode_b" | "deterministic_mode2";
   decision: AuthPathClassification;
+  classificationProvenance?: ClassificationProvenance;
   decisionSummary: string;
   findings: InvestigationEvidenceFinding[];
   openQuestions: InvestigationEvidenceFinding[];
@@ -218,6 +224,7 @@ export interface IntegrationReadinessGuide {
 
   readinessSummary: {
     authPathClassification: AuthPathClassification;
+    classificationProvenance?: ClassificationProvenance;
     oauthNecessityBanner: string;
     activeSetupTime: Traceable<string>;
     approvalWaitTime: Traceable<string>;

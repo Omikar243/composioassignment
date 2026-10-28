@@ -483,6 +483,8 @@ export async function handleInvestigate(req: Request, res: Response) {
     let resolvedDocContent = typeof docContent === "string" ? docContent : undefined;
     let trustedServerSource: TrustedSourceMetadata | undefined;
     let effectiveForceMode = forceMode || "auto";
+    let retrievalStatus: "success" | "failed" | "not_attempted" = "not_attempted";
+    let retrievalError: string | undefined;
     const retrievalLogs: string[] = [];
     const evidenceLogs: string[] = [];
 
@@ -495,7 +497,8 @@ export async function handleInvestigate(req: Request, res: Response) {
 
     // If no explicit source and no caller-supplied doc content, run web discovery pipeline
     if (sourceSelection.sourceType === "none" && !resolvedDocContent) {
-      const discoveryPipeline = new WebDiscoveryPipeline();
+      const allowLiveDiscovery = process.env.LIVE_NETWORK_DISCOVERY === "true" || process.env.NODE_ENV !== "test";
+      const discoveryPipeline = new WebDiscoveryPipeline({ allowLiveNetwork: allowLiveDiscovery });
       const discovered = await discoveryPipeline.discover({
         appName: appName.trim(),
         websiteUrl: typeof websiteUrl === "string" ? websiteUrl.trim() : undefined,
@@ -555,6 +558,7 @@ export async function handleInvestigate(req: Request, res: Response) {
         return;
       }
 
+      retrievalStatus = "success";
       resolvedDocContent = retrieval.markdown;
       trustedServerSource = {
         text: retrieval.markdown,
@@ -568,6 +572,7 @@ export async function handleInvestigate(req: Request, res: Response) {
       // Non-override: Catalog auth doc, discovered URL, or website URL
       const retrieval = await fetchAndCleanDoc(sourceSelection.url);
       if (retrieval.success) {
+        retrievalStatus = "success";
         resolvedDocContent = retrieval.markdown;
         trustedServerSource = {
           text: retrieval.markdown,
@@ -578,6 +583,8 @@ export async function handleInvestigate(req: Request, res: Response) {
           `[PROXY] Retrieved ${retrieval.title || "provider documentation"} from ${retrieval.finalUrl} (${retrieval.characterCount} characters${retrieval.cached ? ", cached" : ""}).`
         );
       } else {
+        retrievalStatus = "failed";
+        retrievalError = retrieval.error;
         const reason = (retrieval.error || "unknown retrieval error").slice(0, 240);
         retrievalLogs.push(
           `[PROXY] Live documentation retrieval failed: ${reason}. No server-verified source text was added; unsupported generated evidence will remain Hypothesis.`
@@ -655,7 +662,9 @@ export async function handleInvestigate(req: Request, res: Response) {
       success: true,
       guide,
       modeUsed: result.modeUsed,
-      retrievalStatus: trustedServerSource ? "success" : "not_attempted",
+      retrievalStatus: trustedServerSource ? "success" : (sourceSelection.url ? "failed" : "not_attempted"),
+      ...(retrievalError ? { retrievalError } : {}),
+      classificationProvenance: guide.readinessSummary.classificationProvenance,
       selectedSource: sourceSelection,
       logs: [...retrievalLogs, ...result.logs, ...evidenceLogs],
       appName: guide.appName,

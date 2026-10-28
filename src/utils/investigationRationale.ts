@@ -128,6 +128,7 @@ export function buildInvestigationAnalysis(
   return {
     engine,
     decision,
+    classificationProvenance: guide.readinessSummary.classificationProvenance,
     decisionSummary: guide.readinessSummary.oneLineSummary,
     findings: unique,
     openQuestions,
