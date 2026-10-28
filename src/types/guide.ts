@@ -44,6 +44,8 @@ export interface CatalogAuthBaseline {
   authDocUrl?: string;
 }
 
+export type CatalogBaseline = CatalogAuthBaseline;
+
 export type AuthPathClassification =
   | "oauth_required" // Connecting requires registering/configuring an OAuth application
   | "hybrid_oauth_or_direct" // Supports public OAuth, but direct key/token works for single-account/internal use

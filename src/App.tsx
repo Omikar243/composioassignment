@@ -53,7 +53,13 @@ export const App: React.FC = () => {
     scrollToTop();
   };
 
-  const handleInvestigateApp = (app: CatalogApp) => {
+  const handleInvestigateApp = (app?: CatalogApp) => {
+    if (!app || !app.name) {
+      setInvestigatorPreset({ appName: "", websiteUrl: "", catalogBaseline: undefined });
+      setCurrentView("investigator");
+      scrollToTop();
+      return;
+    }
     setInvestigatorPreset({
       appName: app.name,
       websiteUrl: app.authDocUrl || app.websiteUrl,

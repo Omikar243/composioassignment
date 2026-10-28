@@ -363,7 +363,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const explicitOAuthEvidence =
     /oauth 2\.0 authorization code|authorization code flow|oauth.{0,50}(?:required|must be configured)|client_id.{0,80}redirect_uri/i.test(rawText);
   const hybridProviders = [
-    "github", "gitlab", "jira", "confluence", "linear", "bitbucket", "circleci",
+    "github", "gitlab", "jira", "confluence", "bitbucket", "circleci",
     "discord", "notion", "asana", "trello", "clickup", "monday", "airtable",
     "coda", "todoist", "hubspot", "zendesk", "salesforce", "pipedrive",
     "zoho", "stripe", "square", "wise", "woocommerce", "magento", "chargebee",

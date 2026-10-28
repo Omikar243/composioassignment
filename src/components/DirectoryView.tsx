@@ -30,7 +30,7 @@ import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 
 export interface DirectoryViewProps {
   onSelectGuide: (guide: IntegrationReadinessGuide) => void;
-  onInvestigateApp: (app: CatalogApp) => void;
+  onInvestigateApp: (app?: CatalogApp) => void;
 }
 
 export const DirectoryView: React.FC<DirectoryViewProps> = ({
@@ -210,7 +210,7 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
             Investigate authentication before your AI agent touches an integration. Follow the provider’s documentation, map the setup, and keep what is known separate from what still needs proof.
           </p>
           <div className="hero-actions">
-            <button type="button" className="hero-action primary" onClick={() => onInvestigateApp("", "")}>
+            <button type="button" className="hero-action primary" onClick={() => onInvestigateApp()}>
               Start an investigation <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </button>
             <button

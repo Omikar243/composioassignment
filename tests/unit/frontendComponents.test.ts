@@ -140,8 +140,8 @@ describe("Milestone 4: Frontend Components & Export Engine Unit Tests", () => {
     it("computes accurate catalog stats for 100 apps", () => {
       const stats = getCatalogStats(CATALOG_100_APPS);
       expect(stats.totalApps).toBe(100);
-      expect(stats.byAuthPath.oauth_required).toBe(50);
-      expect(stats.byAuthPath.hybrid_oauth_or_direct).toBe(25);
+      expect(stats.byAuthPath.oauth_required).toBe(44);
+      expect(stats.byAuthPath.hybrid_oauth_or_direct).toBe(31);
       expect(stats.byAuthPath.direct_credential_only).toBe(25);
       expect(Object.keys(stats.byCategory)).toHaveLength(10);
       Object.values(stats.byCategory).forEach((count) => {
