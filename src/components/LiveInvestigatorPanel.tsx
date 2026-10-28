@@ -109,7 +109,8 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       : initialBaselineMatches
         ? initialCatalogBaseline
         : undefined;
-    const targetUrl = matchedCatalogApp?.authDocUrl || initialCatalogBaseline?.authDocUrl ||
+    const targetUrl = matchedCatalogApp?.authDocUrl ||
+      (initialBaselineMatches ? initialCatalogBaseline?.authDocUrl : undefined) ||
       resolveDocumentationSourceUrl(appInput, urlInput);
 
     setTerminalLogs([
