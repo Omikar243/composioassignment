@@ -3827,7 +3827,12 @@ export function getCatalogStats(apps: CatalogApp[] = CATALOG_100_APPS): CatalogS
     "HR & Operations": 0,
   };
 
-  const byAuthPath = {
+  const byAuthPath: {
+    oauth_required: number;
+    hybrid_oauth_or_direct: number;
+    direct_credential_only: number;
+    [key: string]: number;
+  } = {
     oauth_required: 0,
     hybrid_oauth_or_direct: 0,
     direct_credential_only: 0,

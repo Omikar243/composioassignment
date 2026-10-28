@@ -134,14 +134,18 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
         {/* Dynamic Auth Path Necessity Callout Banner */}
         <div
           className={`p-4 rounded-xl border flex items-start gap-3 ${
-            authMode === "direct_credential"
+            authMode === "undetermined"
+              ? "bg-amber-950/40 border-amber-500/40 text-amber-200"
+              : authMode === "direct_credential"
               ? "bg-teal-950/40 border-teal-500/40 text-teal-200"
               : authMode === "hybrid"
               ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-200"
               : "bg-purple-950/40 border-purple-500/40 text-purple-200"
           }`}
         >
-          {authMode === "direct_credential" ? (
+          {authMode === "undetermined" ? (
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          ) : authMode === "direct_credential" ? (
             <Key className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />
           ) : authMode === "hybrid" ? (
             <Layers className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
@@ -150,7 +154,9 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
           )}
           <div className="text-xs sm:text-sm leading-relaxed">
             <strong className="font-semibold block mb-0.5">
-              {authMode === "direct_credential"
+              {authMode === "undetermined"
+                ? "Authentication Undetermined"
+                : authMode === "direct_credential"
                 ? "OAuth Setup Isn't Required"
                 : authMode === "hybrid"
                 ? "Hybrid Authentication Available"
@@ -487,6 +493,36 @@ export const GuideDetailView: React.FC<GuideDetailViewProps> = ({
                     </tbody>
                   </table>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* UNDETERMINED AUTH MODE */}
+        {guide.authSpec.mode === "undetermined" && (
+          <div className="glass-card p-6 rounded-2xl border border-amber-500/40 space-y-4">
+            <div className="flex items-center gap-2 pb-4 border-b border-slate-800">
+              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <h2 className="text-lg font-bold text-white">
+                Authentication Undetermined
+              </h2>
+            </div>
+
+            <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/20 text-xs text-amber-200 leading-relaxed">
+              <strong className="block text-amber-300 font-semibold mb-1">Missing Evidence:</strong>
+              <p>{guide.authSpec.missingEvidenceReason}</p>
+            </div>
+
+            {guide.authSpec.suggestedActions && guide.authSpec.suggestedActions.length > 0 && (
+              <div className="space-y-2 pt-2 text-xs">
+                <span className="font-semibold text-slate-300 block">
+                  Suggested Actions to Resolve Authentication:
+                </span>
+                <ul className="list-disc list-inside space-y-1.5 text-slate-400">
+                  {guide.authSpec.suggestedActions.map((action, i) => (
+                    <li key={i}>{action}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>

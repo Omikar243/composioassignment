@@ -71,7 +71,9 @@ export function generateGuideMarkdown(guide: IntegrationReadinessGuide): string 
   md += `| Attribute | Value | Epistemic Evidence Status |\n`;
   md += `| :--- | :--- | :--- |\n`;
   const authPathLabel =
-    guide.readinessSummary.authPathClassification === "oauth_required"
+    guide.readinessSummary.authPathClassification === "undetermined"
+      ? "Authentication Undetermined"
+      : guide.readinessSummary.authPathClassification === "oauth_required"
       ? "OAuth Required"
       : guide.readinessSummary.authPathClassification === "hybrid_oauth_or_direct"
       ? "Hybrid Auth"
@@ -182,6 +184,17 @@ export function generateGuideMarkdown(guide: IntegrationReadinessGuide): string 
     md += `#### Option 2: Public OAuth 2.0 Path (Multi-Tenant)\n`;
     md += `- **Authorization URL**: \`${h.oauthPath.providerEndpoints.authorizationUrl.value}\`\n`;
     md += `- **Token URL**: \`${h.oauthPath.providerEndpoints.tokenUrl.value}\`\n\n`;
+  } else if (guide.authSpec.mode === "undetermined") {
+    const u = guide.authSpec;
+    md += `### Authentication Undetermined\n\n`;
+    md += `> **Missing Evidence**: ${u.missingEvidenceReason}\n\n`;
+    if (u.suggestedActions && u.suggestedActions.length > 0) {
+      md += `**Suggested Actions:**\n`;
+      u.suggestedActions.forEach((act) => {
+        md += `- ${act}\n`;
+      });
+      md += `\n`;
+    }
   }
 
   // 4. Setup Runbook

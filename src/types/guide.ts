@@ -49,7 +49,26 @@ export type CatalogBaseline = CatalogAuthBaseline;
 export type AuthPathClassification =
   | "oauth_required" // Connecting requires registering/configuring an OAuth application
   | "hybrid_oauth_or_direct" // Supports public OAuth, but direct key/token works for single-account/internal use
-  | "direct_credential_only"; // Direct API key, token, or basic auth; zero OAuth endpoints exist
+  | "direct_credential_only" // Direct API key, token, or basic auth; zero OAuth endpoints exist
+  | "undetermined";
+
+// Credential Type Taxonomy
+export type CredentialType =
+  | "personal_access_token"
+  | "server_token"
+  | "account_token"
+  | "api_key"
+  | "plan_token"
+  | "bearer_token"
+  | "basic_credentials";
+
+// Custom Header Transport Specification
+export interface CustomHeaderTransport {
+  headerName: string; // e.g. "X-Figma-Token", "X-Postmark-Server-Token"
+  formatPattern: string; // e.g. "X-Figma-Token: <token>", "Authorization: DeepL-Auth-Key [yourAuthKey]"
+  location: "header" | "query" | "basic_auth";
+  description?: string;
+}
 
 // 3. Managed Auth Availability (Explicit unknown state)
 export type ManagedAuthAvailability = "available" | "bring_your_own_required" | "unknown";
@@ -118,6 +137,9 @@ export interface DirectCredentialSpec {
   headerOrParamFormat: Traceable<string>; // e.g., "Authorization: Bearer <key>"
   rotationAndExpiryRules: Traceable<string>;
   portalUrl?: string;
+  credentialType?: CredentialType;
+  primaryTransport?: CustomHeaderTransport;
+  additionalTransports?: CustomHeaderTransport[];
 }
 
 // Branch 3: Hybrid Auth Specification (Both Direct and OAuth Paths)
@@ -128,7 +150,18 @@ export interface HybridAuthSpec {
   oauthPath: OAuthProtocolSpec;
 }
 
-export type ConditionalAuthSpec = OAuthProtocolSpec | DirectCredentialSpec | HybridAuthSpec;
+// Branch 4: Undetermined Authentication Specification (No Evidence of Auth Model)
+export interface UndeterminedAuthSpec {
+  mode: "undetermined";
+  missingEvidenceReason: string;
+  suggestedActions: string[];
+}
+
+export type ConditionalAuthSpec =
+  | OAuthProtocolSpec
+  | DirectCredentialSpec
+  | HybridAuthSpec
+  | UndeterminedAuthSpec;
 
 // SDK Code Snippet Specification with Validation Status
 export interface CodeSnippetSpec {
@@ -199,7 +232,7 @@ export interface IntegrationReadinessGuide {
   blockersAndPlaybooks: Traceable<BlockerPlaybookItem[]>;
 
   composioIntegration: {
-    recommendedScheme: ConcreteAuthScheme;
+    recommendedScheme: ConcreteAuthScheme | "NONE";
     configurationSteps: Traceable<string[]>;
     sdkSnippets: CodeSnippetSpec[];
   };

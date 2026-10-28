@@ -284,3 +284,58 @@ export function sanitizeAndValidateEndpoint(
   result.sanitizedUrl = parsed.toString();
   return result;
 }
+
+import dns from "node:dns/promises";
+
+export interface SsrfWithDnsOptions {
+  skipDnsInTest?: boolean;
+}
+
+/**
+ * Validates whether a target URL is safe for server-side HTTP retrieval with async DNS resolution.
+ * Detects DNS rebinding attacks that resolve public hostnames to internal private IP ranges.
+ */
+export async function validateSsrfTargetWithDns(
+  url: string,
+  options?: SsrfWithDnsOptions
+): Promise<SsrfValidationResult> {
+  const staticCheck = validateSsrfTarget(url);
+  if (!staticCheck.isValid || !staticCheck.allowed) {
+    return staticCheck;
+  }
+
+  if (options?.skipDnsInTest && process.env.NODE_ENV === "test") {
+    return staticCheck;
+  }
+
+  try {
+    const parsed = new URL(url.trim());
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+
+    const addresses = await dns.lookup(hostname, { all: true });
+    for (const record of addresses) {
+      const ipCheck = validateSsrfTarget(`http://${record.address}`);
+      if (!ipCheck.isValid || !ipCheck.allowed) {
+        const errorMsg = `DNS resolution for host '${hostname}' resolved to blocked IP ${record.address} (SSRF guard)`;
+        return {
+          isValid: false,
+          allowed: false,
+          error: errorMsg,
+          reason: errorMsg,
+        };
+      }
+    }
+  } catch (err: any) {
+    if (err.code !== "ENOTFOUND") {
+      const errorMsg = `DNS lookup failed for host: ${err.message}`;
+      return {
+        isValid: false,
+        allowed: false,
+        error: errorMsg,
+        reason: errorMsg,
+      };
+    }
+  }
+
+  return { isValid: true, allowed: true };
+}

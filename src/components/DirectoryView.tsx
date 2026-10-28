@@ -11,6 +11,7 @@ import {
   Lock,
   Clock,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   HelpCircle,
   ChevronRight,
@@ -115,6 +116,13 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
 
   const getAuthBadge = (authPath: AuthPathClassification) => {
     switch (authPath) {
+      case "undetermined":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-950/60 text-amber-300 border border-amber-500/40">
+            <AlertTriangle className="w-3 h-3 text-amber-400" />
+            <span>Authentication Undetermined</span>
+          </span>
+        );
       case "oauth_required":
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-950/60 text-purple-300 border border-purple-500/40">

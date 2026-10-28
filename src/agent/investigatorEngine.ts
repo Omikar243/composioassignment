@@ -17,6 +17,7 @@ import {
   OAuthProtocolSpec,
   DirectCredentialSpec,
   HybridAuthSpec,
+  UndeterminedAuthSpec,
   ConcreteAuthScheme,
   AuthPathClassification,
   CatalogBaseline,
@@ -26,8 +27,11 @@ import {
   BlockerPlaybookItem,
   PrerequisiteItem,
   CodeSnippetSpec,
+  CredentialType,
+  CustomHeaderTransport,
 } from "../types/guide.js";
 import { getCuratedGuide } from "../data/curatedGuides.js";
+import { findProviderInRegistry } from "../data/providerRegistry.js";
 import { sanitizeAndValidateEndpoint } from "./sanitizer.js";
 import { buildInvestigationAnalysis } from "../utils/investigationRationale.js";
 
@@ -67,7 +71,12 @@ export function validateIntegrationReadinessGuide(guide: unknown): ValidationRep
   if (!g.supportedAuthSchemes || typeof g.supportedAuthSchemes !== "object") {
     errors.push("guide.supportedAuthSchemes must be an object");
   } else {
-    if (!Array.isArray(g.supportedAuthSchemes.value) || g.supportedAuthSchemes.value.length === 0) {
+    if (!Array.isArray(g.supportedAuthSchemes.value)) {
+      errors.push("guide.supportedAuthSchemes.value must be an array of schemes");
+    } else if (
+      g.readinessSummary?.authPathClassification !== "undetermined" &&
+      g.supportedAuthSchemes.value.length === 0
+    ) {
       errors.push("guide.supportedAuthSchemes.value must be a non-empty array of schemes");
     }
     validateClaimEvidence(g.supportedAuthSchemes.evidence, "supportedAuthSchemes", errors);
@@ -88,7 +97,12 @@ export function validateIntegrationReadinessGuide(guide: unknown): ValidationRep
   if (!g.readinessSummary || typeof g.readinessSummary !== "object") {
     errors.push("guide.readinessSummary must be an object");
   } else {
-    const validPaths: AuthPathClassification[] = ["oauth_required", "hybrid_oauth_or_direct", "direct_credential_only"];
+    const validPaths: AuthPathClassification[] = [
+      "oauth_required",
+      "hybrid_oauth_or_direct",
+      "direct_credential_only",
+      "undetermined",
+    ];
     if (!validPaths.includes(g.readinessSummary.authPathClassification)) {
       errors.push(`readinessSummary.authPathClassification must be one of ${validPaths.join(", ")}`);
     }
@@ -120,8 +134,10 @@ export function validateIntegrationReadinessGuide(guide: unknown): ValidationRep
       validateDirectCredentialSpec(g.authSpec, errors);
     } else if (mode === "hybrid") {
       validateHybridSpec(g.authSpec, errors);
+    } else if (mode === "undetermined") {
+      validateUndeterminedSpec(g.authSpec, errors);
     } else {
-      errors.push(`guide.authSpec.mode must be 'oauth' | 'direct_credential' | 'hybrid', got '${mode}'`);
+      errors.push(`guide.authSpec.mode must be 'oauth' | 'direct_credential' | 'hybrid' | 'undetermined', got '${mode}'`);
     }
   }
 
@@ -276,6 +292,23 @@ function validateHybridSpec(spec: any, errors: string[]): void {
   }
 }
 
+function validateUndeterminedSpec(spec: any, errors: string[]): void {
+  if (typeof spec.missingEvidenceReason !== "string" || spec.missingEvidenceReason.trim() === "") {
+    errors.push("UndeterminedAuthSpec.missingEvidenceReason must be a non-empty string");
+  }
+  if (!Array.isArray(spec.suggestedActions) || spec.suggestedActions.length === 0) {
+    errors.push("UndeterminedAuthSpec.suggestedActions must be a non-empty array of strings");
+  }
+  if (
+    "providerEndpoints" in spec ||
+    "composioCallbackGuidance" in spec ||
+    "headerOrParamFormat" in spec ||
+    "credentialLabel" in spec
+  ) {
+    errors.push("UndeterminedAuthSpec must not contain endpoints or credential headers (leakage)");
+  }
+}
+
 // ============================================================================
 // 2. Mode 1: Deterministic Curated Fast-Path (<5ms)
 // ============================================================================
@@ -327,6 +360,30 @@ export interface DynamicInvestigationInput {
 }
 
 /**
+ * Extracts a verbatim excerpt around targetSubstring from docText.
+ * Preserves original text and only normalizes whitespace inside the excerpt.
+ */
+export function extractVerbatimExcerpt(
+  docText: string,
+  targetSubstring: string,
+  windowChars = 120
+): string | undefined {
+  if (!docText || !targetSubstring) return undefined;
+  const lowerDoc = docText.toLowerCase();
+  const lowerTarget = targetSubstring.toLowerCase();
+  const index = lowerDoc.indexOf(lowerTarget);
+  if (index === -1) return undefined;
+
+  const lineStart = docText.lastIndexOf("\n", index);
+  const start = lineStart !== -1 && index - lineStart <= windowChars ? lineStart + 1 : Math.max(0, index - 40);
+  const lineEnd = docText.indexOf("\n", index + targetSubstring.length);
+  const end = lineEnd !== -1 && lineEnd - index <= windowChars ? lineEnd : Math.min(docText.length, index + targetSubstring.length + 40);
+
+  const excerpt = docText.substring(start, end).trim();
+  return excerpt.replace(/\s+/g, " ");
+}
+
+/**
  * Executes Mode 2 dynamic heuristic research on an unfamiliar app.
  * Adheres strictly to the ground-truth profiles for Linear, HubSpot, Resend, Calendly,
  * and handles any arbitrary unfamiliar SaaS app.
@@ -351,18 +408,27 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const domain = parsedWebsiteUrl?.hostname || `${lowerName.replace(/[^a-z0-9]/g, "")}.com`;
   const canonicalUrl = parsedWebsiteUrl?.toString() || `https://${domain}`;
 
-  // Step 1: Resolve authentication classification. Catalog metadata is the baseline;
-  // generic marketing copy and footer mentions must not overwrite provider auth facts.
+  // Step 1: Resolve authentication classification.
+  // Registry entry has priority for recognized providers; catalog metadata is the baseline;
+  // when ungrounded and unevidenced, authPath is undetermined.
   const baseline = input.catalogBaseline;
+  const registryEntry = findProviderInRegistry(name);
+
   const explicitHybridEvidence =
     /personal access token|private app token|private app access token|api token/i.test(rawText) &&
     /oauth(?:\s*2\.0)?|authorization_code|public app|multi-tenant/i.test(rawText);
   const explicitDirectEvidence =
     /(?:api key|api token|bearer token|personal access token)/i.test(rawText) &&
-    /(?:authorization: bearer|x-api-key|apikey|authenticate|authentication|api request)/i.test(rawText) &&
+    /(?:authorization:\s*bearer|x-api-key|apikey|authenticate|authentication|api request)/i.test(rawText) &&
     !/oauth.{0,80}(?:required|must|only)|authorization code flow required/i.test(rawText);
   const explicitOAuthEvidence =
-    /oauth 2\.0 authorization code|authorization code flow|oauth.{0,50}(?:required|must be configured)|client_id.{0,80}redirect_uri/i.test(rawText);
+    /(?:oauth\s*2\.0|oauth2\b|authorization[ _-]code|client_id.{0,80}(?:redirect_uri|client_secret)|authorization endpoint|token endpoint|oauth\s+(?:flow|grant|endpoint|token|dance|application|app\b)|register(?:ing)?\s+(?:an?\s+)?oauth)/i.test(
+      rawText
+    ) ||
+    (/oauth/i.test(rawText) &&
+      !/(?:sign in with|log in with|sso).{0,40}oauth/i.test(rawText) &&
+      !/oauth status/i.test(rawText) &&
+      /(?:developer|api|endpoint|token|secret|client|scope|redirect_uri)/i.test(rawText));
   const hybridProviders = [
     "github", "gitlab", "jira", "confluence", "bitbucket", "circleci",
     "discord", "notion", "asana", "trello", "clickup", "monday", "airtable",
@@ -376,18 +442,22 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     "cohere", "pinecone", "weaviate", "hugging face", "plaid", "mercury",
     "aws s3", "google cloud storage", "cloudflare r2", "backblaze",
   ];
+  const oauthProviders = ["linear", "calendly"];
+
   let authPath: AuthPathClassification;
   if (baseline) {
     authPath = baseline.authPath;
+  } else if (registryEntry) {
+    authPath = registryEntry.defaultClassification;
   } else if (explicitHybridEvidence || hybridProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "hybrid_oauth_or_direct";
   } else if (explicitDirectEvidence || directProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "direct_credential_only";
-  } else if (explicitOAuthEvidence) {
+  } else if (explicitOAuthEvidence || oauthProviders.some((provider) => lowerName.includes(provider))) {
     authPath = "oauth_required";
   } else {
-    // The guide schema has three categories; the rationale explicitly marks this as provisional.
-    authPath = "oauth_required";
+    // When no baseline, no registry match, and no explicit evidence in documentation -> undetermined
+    authPath = "undetermined";
   }
 
   // Step 2: Extract endpoints only from known provider facts or retrieved text.
@@ -396,8 +466,13 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   let tokenUrl = UNKNOWN_ENDPOINT;
   let pkceStatus: "required" | "supported_optional" | "not_mentioned_in_sources" = "not_mentioned_in_sources";
 
-  // Dedicated ground truth checks for archetypes
-  if (lowerName.includes("linear")) {
+  if (registryEntry?.oauthEndpoints) {
+    authorizationUrl = registryEntry.oauthEndpoints.authorizationUrl;
+    tokenUrl = registryEntry.oauthEndpoints.tokenUrl;
+    if (registryEntry.oauthEndpoints.pkceStatus) {
+      pkceStatus = registryEntry.oauthEndpoints.pkceStatus;
+    }
+  } else if (lowerName.includes("linear")) {
     authorizationUrl = "https://linear.app/oauth/authorize";
     tokenUrl = "https://api.linear.app/oauth/token";
     pkceStatus = "supported_optional";
@@ -410,7 +485,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     tokenUrl = "https://auth.calendly.com/oauth/token";
     pkceStatus = "supported_optional";
   } else {
-    // Regex matching from provided doc content
+    // Regex matching from provided doc content (omits /g flag)
     const authRegex = /https?:\/\/[a-zA-Z0-9.\-]+\/(?:[a-zA-Z0-9_\-\/]*\/)?(?:oauth2?|auth|api\/oauth)\/(?:authorize|auth)/i;
     const tokenRegex = /https?:\/\/[a-zA-Z0-9.\-]+\/(?:[a-zA-Z0-9_\-\/]*\/)?(?:oauth2?|auth|api\/oauth)\/(?:token|access_token|access)/i;
 
@@ -425,20 +500,23 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     }
   }
 
-  const endpointEvidence = (value: string, label: string): ClaimEvidence =>
-    value === UNKNOWN_ENDPOINT
-      ? {
-          kind: "unverified_hypothesis",
-          hypothesisBasis: "No provider endpoint was extracted from a verified curated guide or the retrieved documentation.",
-          whatRemainsUnverified: `${label} endpoint must be located in the provider's current OAuth documentation before use.`,
-          ...(parsedWebsiteUrl ? { relatedSourceUrl: canonicalUrl } : {}),
-        }
-      : {
-          kind: "documented_not_tested",
-          sourceTitle: `${name} OAuth Documentation`,
-          sourceUrl: canonicalUrl,
-          whatSourceExplicitlyStates: `${label} endpoint: ${value}`,
-        };
+  const endpointEvidence = (value: string, label: string): ClaimEvidence => {
+    if (value === UNKNOWN_ENDPOINT) {
+      return {
+        kind: "unverified_hypothesis",
+        hypothesisBasis: "No provider endpoint was extracted from a verified curated guide or the retrieved documentation.",
+        whatRemainsUnverified: `${label} endpoint must be located in the provider's current OAuth documentation before use.`,
+        ...(parsedWebsiteUrl ? { relatedSourceUrl: canonicalUrl } : {}),
+      };
+    }
+    const excerpt = extractVerbatimExcerpt(rawText, value);
+    return {
+      kind: "documented_not_tested",
+      sourceTitle: registryEntry ? `${registryEntry.canonicalName} OAuth Documentation` : `${name} OAuth Documentation`,
+      sourceUrl: registryEntry?.authDocUrl || canonicalUrl,
+      whatSourceExplicitlyStates: excerpt || `${label} endpoint: ${value}`,
+    };
+  };
 
   // Step 3: Epistemic Invariants
   // Unfamiliar dynamic app MUST have composioManagedAuthStatus = "unknown"
@@ -455,7 +533,9 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
 
   // Setup time: unverified_hypothesis if not stated in source
   let setupTimeValue = "Estimated ~15–30 mins";
-  if (authPath === "direct_credential_only") {
+  if (authPath === "undetermined") {
+    setupTimeValue = "Estimated ~5–10 mins";
+  } else if (authPath === "direct_credential_only") {
     setupTimeValue = "Estimated ~2–5 mins";
   } else if (lowerName.includes("linear")) {
     setupTimeValue = "Estimated ~5–10 mins";
@@ -472,50 +552,94 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   };
 
   // Approval wait time: unverified_hypothesis or documented not applicable
-  const approvalWaitTime: Traceable<string> =
-    authPath === "direct_credential_only"
-      ? {
-          value: "Unknown — no provider review gate was verified for this credential path",
-          evidence: {
-            kind: "unverified_hypothesis",
-            hypothesisBasis:
-              "A direct credential path may avoid OAuth application review, but no provider-specific review gate was verified for this generated guide.",
-            whatRemainsUnverified:
-              "Whether account approval, API enablement, workspace policy, or usage-tier limits add a review step.",
-          },
-        }
-      : {
-          value: "No review gate identified in the sources checked",
-          evidence: {
-            kind: "unverified_hypothesis",
-            hypothesisBasis:
-              "Official documentation does not mention an app review or marketplace submission step for private app creation.",
-            whatRemainsUnverified:
-              "Whether enterprise workspace policies or distribution settings impose review gates.",
-          },
-        };
+  let approvalWaitValue = "No review gate identified in the sources checked";
+  let approvalWaitBasis = "Official documentation does not mention an app review or marketplace submission step for private app creation.";
+  let approvalWaitUnverified = "Whether enterprise workspace policies or distribution settings impose review gates.";
+
+  if (registryEntry?.reviewProvenance) {
+    if (registryEntry.reviewProvenance.reviewRequired) {
+      approvalWaitValue = registryEntry.reviewProvenance.threshold || "Review required by provider";
+      approvalWaitBasis = registryEntry.reviewProvenance.reviewNotes;
+      approvalWaitUnverified = "Exact provider queue turnaround time and approval criteria.";
+    } else {
+      approvalWaitValue = "Self-serve — zero provider review gate";
+      approvalWaitBasis = registryEntry.reviewProvenance.reviewNotes;
+      approvalWaitUnverified = "None; provider credentials self-serve immediately.";
+    }
+  } else if (authPath === "direct_credential_only") {
+    approvalWaitValue = "Unknown — no provider review gate was verified for this credential path";
+    approvalWaitBasis = "A direct credential path may avoid OAuth application review, but no provider-specific review gate was verified for this generated guide.";
+    approvalWaitUnverified = "Whether account approval, API enablement, workspace policy, or usage-tier limits add a review step.";
+  } else if (authPath === "undetermined") {
+    approvalWaitValue = "Unknown — authentication path is undetermined";
+    approvalWaitBasis = "Cannot evaluate review requirements without determining provider authentication path.";
+    approvalWaitUnverified = "Provider integration model and review requirements.";
+  }
+
+  const approvalWaitTime: Traceable<string> = {
+    value: approvalWaitValue,
+    evidence: {
+      kind: "unverified_hypothesis",
+      hypothesisBasis: approvalWaitBasis,
+      whatRemainsUnverified: approvalWaitUnverified,
+    },
+  };
 
   // Step 4: Construct Conditional Auth Spec
   let authSpec: ConditionalAuthSpec;
   let supportedAuthSchemes: ConcreteAuthScheme[] = baseline?.supportedAuthSchemes?.length
     ? [...baseline.supportedAuthSchemes]
+    : registryEntry?.supportedAuthSchemes?.length
+    ? [...registryEntry.supportedAuthSchemes]
     : ["OAUTH2"];
 
-  if (authPath === "direct_credential_only") {
-    supportedAuthSchemes = ["API_KEY"];
+  if (authPath === "undetermined") {
+    supportedAuthSchemes = [];
+    authSpec = {
+      mode: "undetermined",
+      missingEvidenceReason:
+        rawText.trim().length === 0
+          ? `No documentation was retrieved for '${name}' to determine its authentication method.`
+          : `Retrieved documentation for '${name}' lacks verifiable evidence of OAuth endpoints, API keys, or personal access tokens.`,
+      suggestedActions: [
+        `Locate official developer documentation for ${name}`,
+        "Determine whether the provider uses OAuth 2.0, API keys, or personal access tokens",
+        "Re-run the live investigation with the official documentation URL in the override field",
+      ],
+    };
+  } else if (authPath === "direct_credential_only") {
+    supportedAuthSchemes = baseline?.supportedAuthSchemes?.length
+      ? [...baseline.supportedAuthSchemes]
+      : registryEntry?.supportedAuthSchemes?.length
+      ? [...registryEntry.supportedAuthSchemes]
+      : ["API_KEY"];
+
+    const customHeaders = registryEntry?.customTransportHeaders || [];
+    const primaryTransport = customHeaders[0];
+    const additionalTransports = customHeaders.length > 1 ? customHeaders.slice(1) : undefined;
+    const credentialType = registryEntry?.credentialTypes?.[0] || "api_key";
+
+    const headerFormatVal = primaryTransport
+      ? primaryTransport.formatPattern
+      : `Authorization: Bearer ${lowerName.substring(0, 3)}_...`;
+
+    const docExcerpt = primaryTransport
+      ? (extractVerbatimExcerpt(rawText, primaryTransport.headerName) || `Requests must authenticate with ${primaryTransport.headerName}.`)
+      : (extractVerbatimExcerpt(rawText, "Authorization") || "Requests must authenticate with an API Key in the Authorization header.");
+
     const directSpec: DirectCredentialSpec = {
       mode: "direct_credential",
       scheme: "API_KEY",
-      credentialLabel: `${name} API Key`,
+      credentialLabel: registryEntry ? `${registryEntry.canonicalName} API Key` : `${name} API Key`,
       whyOAuthIsNotRequired:
         "OAuth setup isn't required for this integration path. Direct API key credentials authenticate all agent API requests.",
       headerOrParamFormat: {
-        value: `Authorization: Bearer ${lowerName.substring(0, 3)}_...`,
+        value: headerFormatVal,
         evidence: {
           kind: "documented_not_tested",
-          sourceTitle: `${name} Authentication Reference`,
-          sourceUrl: canonicalUrl,
-          whatSourceExplicitlyStates: "Requests must authenticate with an API Key in the Authorization header.",
+          sourceTitle: registryEntry ? `${registryEntry.canonicalName} Authentication Reference` : `${name} Authentication Reference`,
+          sourceUrl: registryEntry?.authDocUrl || canonicalUrl,
+          whatSourceExplicitlyStates: docExcerpt,
         },
       },
       rotationAndExpiryRules: {
@@ -526,24 +650,39 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           whatRemainsUnverified: "Key lifecycle limits and automated secret rotation APIs.",
         },
       },
-      portalUrl: `${canonicalUrl}/settings/api-keys`,
+      portalUrl: registryEntry ? `${registryEntry.websiteUrl}/settings/api-keys` : `${canonicalUrl}/settings/api-keys`,
+      credentialType,
+      ...(primaryTransport ? { primaryTransport } : {}),
+      ...(additionalTransports ? { additionalTransports } : {}),
     };
     authSpec = directSpec;
   } else if (authPath === "hybrid_oauth_or_direct") {
-    supportedAuthSchemes = ["OAUTH2", "BEARER_TOKEN"];
+    supportedAuthSchemes = baseline?.supportedAuthSchemes?.length
+      ? [...baseline.supportedAuthSchemes]
+      : registryEntry?.supportedAuthSchemes?.length
+      ? [...registryEntry.supportedAuthSchemes]
+      : ["OAUTH2", "BEARER_TOKEN"];
+
+    const customHeaders = registryEntry?.customTransportHeaders || [];
+    const primaryTransport = customHeaders[0];
+    const additionalTransports = customHeaders.length > 1 ? customHeaders.slice(1) : undefined;
+    const credentialType = registryEntry?.credentialTypes?.[0] || "personal_access_token";
+
     const directPath: DirectCredentialSpec = {
       mode: "direct_credential",
       scheme: "BEARER_TOKEN",
-      credentialLabel: `${name} Private App Access Token`,
+      credentialLabel: registryEntry ? `${registryEntry.canonicalName} Personal Access Token` : `${name} Private App Access Token`,
       whyOAuthIsNotRequired:
         "OAuth setup isn't required for single-account internal automations. A private access token can be generated in developer settings.",
       headerOrParamFormat: {
-        value: "Authorization: Bearer <access_token>",
+        value: primaryTransport ? primaryTransport.formatPattern : "Authorization: Bearer <access_token>",
         evidence: {
           kind: "documented_not_tested",
-          sourceTitle: `${name} Private Apps Documentation`,
-          sourceUrl: canonicalUrl,
-          whatSourceExplicitlyStates: "Private app tokens are passed via Bearer authorization headers.",
+          sourceTitle: registryEntry ? `${registryEntry.canonicalName} Developer Documentation` : `${name} Private Apps Documentation`,
+          sourceUrl: registryEntry?.authDocUrl || canonicalUrl,
+          whatSourceExplicitlyStates: primaryTransport
+            ? (extractVerbatimExcerpt(rawText, primaryTransport.headerName) || `Pass token in ${primaryTransport.headerName} header.`)
+            : (extractVerbatimExcerpt(rawText, "Bearer") || "Private app tokens are passed via Bearer authorization headers."),
         },
       },
       rotationAndExpiryRules: {
@@ -554,7 +693,10 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           whatRemainsUnverified: "Specific organizational token expiration policies.",
         },
       },
-      portalUrl: `${canonicalUrl}/settings/integrations/private-apps`,
+      portalUrl: registryEntry ? `${registryEntry.websiteUrl}/settings/tokens` : `${canonicalUrl}/settings/integrations/private-apps`,
+      credentialType,
+      ...(primaryTransport ? { primaryTransport } : {}),
+      ...(additionalTransports ? { additionalTransports } : {}),
     };
 
     const oauthPath: OAuthProtocolSpec = {
@@ -613,7 +755,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           kind: "documented_not_tested",
           sourceTitle: `${name} Scopes Reference`,
           sourceUrl: canonicalUrl,
-          whatSourceExplicitlyStates: "Applications request granular read and write scopes during authorization.",
+          whatSourceExplicitlyStates: extractVerbatimExcerpt(rawText, "scope") || "Applications request granular read and write scopes during authorization.",
         },
       },
     };
@@ -628,7 +770,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           sourceTitle: `${name} Authentication Overview`,
           sourceUrl: canonicalUrl,
           whatSourceExplicitlyStates:
-            "Developers can authenticate internal tools using private app tokens or build public apps with OAuth 2.0.",
+            extractVerbatimExcerpt(rawText, "OAuth") || "Developers can authenticate internal tools using private app tokens or build public apps with OAuth 2.0.",
         },
       },
       directCredentialPath: directPath,
@@ -692,7 +834,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
           kind: "documented_not_tested",
           sourceTitle: `${name} Scopes Reference`,
           sourceUrl: canonicalUrl,
-          whatSourceExplicitlyStates: "Applications request scopes appropriate to their functional requirements.",
+          whatSourceExplicitlyStates: extractVerbatimExcerpt(rawText, "scope") || "Applications request scopes appropriate to their functional requirements.",
         },
       },
     };
@@ -700,7 +842,63 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
 
   // Step 5: Setup Runbook Steps
   const setupRunbook: SetupStep[] =
-    authPath === "direct_credential_only"
+    authPath === "undetermined"
+      ? [
+          {
+            stepNumber: 1,
+            title: `Locate Official Developer Documentation for ${name}`,
+            actor: "developer_portal_action",
+            estimatedDuration: {
+              value: "~5 mins",
+              evidence: {
+                kind: "unverified_hypothesis",
+                hypothesisBasis: "Research and documentation discovery time estimate",
+                whatRemainsUnverified: "Provider developer portal availability and documentation structure",
+              },
+            },
+            portalUrl: canonicalUrl,
+            instructions: [
+              `Visit ${name}'s website or developer portal.`,
+              "Search for 'API Documentation', 'Authentication', or 'Developer Guides'.",
+              "Confirm whether the service supports OAuth 2.0, API Keys, or Personal Access Tokens.",
+            ],
+          },
+          {
+            stepNumber: 2,
+            title: "Identify Required Authentication Model and Endpoints",
+            actor: "developer_portal_action",
+            estimatedDuration: {
+              value: "~5 mins",
+              evidence: {
+                kind: "unverified_hypothesis",
+                hypothesisBasis: "Documentation review and endpoint verification estimate",
+                whatRemainsUnverified: "Specific authentication requirements and scopes",
+              },
+            },
+            instructions: [
+              "If OAuth 2.0 is required, record the authorization URL, token URL, and required scopes.",
+              "If API keys or tokens are used, identify the header format and token generation portal.",
+            ],
+          },
+          {
+            stepNumber: 3,
+            title: "Re-run Live Investigation with Documentation Override",
+            actor: "agent_prepared",
+            estimatedDuration: {
+              value: "~1 min",
+              evidence: {
+                kind: "unverified_hypothesis",
+                hypothesisBasis: "Copilot override investigation execution time",
+                whatRemainsUnverified: "Network retrieval latency",
+              },
+            },
+            instructions: [
+              "Provide the exact authentication documentation URL in the investigation input.",
+              "Execute the investigation again to extract verified endpoints and configuration steps.",
+            ],
+          },
+        ]
+      : authPath === "direct_credential_only"
       ? [
           {
             stepNumber: 1,
@@ -831,14 +1029,18 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
         kind: "documented_not_tested",
         sourceTitle: `${name} Developer Documentation`,
         sourceUrl: canonicalUrl,
-        whatSourceExplicitlyStates: `Authentication is supported via ${supportedAuthSchemes.join(" and ")}.`,
+        whatSourceExplicitlyStates: supportedAuthSchemes.length > 0
+          ? `Authentication is supported via ${supportedAuthSchemes.join(" and ")}.`
+          : `No supported authentication schemes were confirmed for ${name}.`,
       },
     },
     composioManagedAuthStatus,
     readinessSummary: {
       authPathClassification: authPath,
       oauthNecessityBanner:
-        authPath === "direct_credential_only"
+        authPath === "undetermined"
+          ? "Authentication method could not be determined from the available documentation."
+          : authPath === "direct_credential_only"
           ? "OAuth setup isn't required for this integration path."
           : authPath === "hybrid_oauth_or_direct"
           ? "OAuth setup is optional. Single-account or internal automations can use a private access token without registering an OAuth app."
@@ -847,7 +1049,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       approvalWaitTime,
       oneLineSummary: baseline
         ? `Catalog baseline ${authPath.replace(/_/g, " ")} classification for ${name}; dynamic analysis preserves the catalog path unless provider-specific authentication evidence is reviewed.`
-        : rawText.trim().length < 80
+        : authPath === "undetermined" || rawText.trim().length < 80
           ? `Provisional ${authPath.replace(/_/g, " ")} classification for ${name}; insufficient documentation was retrieved to confirm the authentication path. Verify against official auth documentation.`
           : `Evidence-based ${authPath.replace(/_/g, " ")} classification for ${name}; verify auth support, endpoints, and provider review requirements against current documentation.`,
     },
@@ -904,7 +1106,7 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       },
     },
     composioIntegration: {
-      recommendedScheme: supportedAuthSchemes[0],
+      recommendedScheme: authPath === "undetermined" ? "NONE" : (supportedAuthSchemes[0] || "NONE"),
       configurationSteps: {
         value: [
           `Open Composio Dashboard -> Integrations -> ${name}.`,
@@ -1017,7 +1219,24 @@ export function enforceDocumentEvidence<T extends IntegrationReadinessGuide>(
     return copy;
   };
 
-  return { guide: visit(guide) as T, downgradedCount };
+  const updatedGuide = visit(guide) as T;
+  if (updatedGuide.investigationAnalysis) {
+    updatedGuide.investigationAnalysis = buildInvestigationAnalysis(
+      updatedGuide,
+      updatedGuide.investigationAnalysis.engine
+    );
+  }
+  return { guide: updatedGuide, downgradedCount };
+}
+
+export function synchronizeInvestigationAnalysis<T extends IntegrationReadinessGuide>(guide: T): T {
+  if (guide.investigationAnalysis) {
+    guide.investigationAnalysis = buildInvestigationAnalysis(
+      guide,
+      guide.investigationAnalysis.engine
+    );
+  }
+  return guide;
 }
 
 const privateReasoningField = /^(analysis|reasoning|thoughts?|chain[_-]?of[_-]?thought|cot|scratchpad|internal[_-]?reasoning|private[_-]?reasoning)$/i;
@@ -1053,7 +1272,7 @@ const MODE_B_EXTRACTION_SCHEMA = {
   properties: {
     authPathClassification: {
       type: "string",
-      enum: ["oauth_required", "hybrid_oauth_or_direct", "direct_credential_only"],
+      enum: ["oauth_required", "hybrid_oauth_or_direct", "direct_credential_only", "undetermined"],
     },
     supportedAuthSchemes: {
       type: "array",
@@ -1178,13 +1397,28 @@ function hydrateModeBExtraction(
     ? "The provider uses an API key only and does not use OAuth."
     : classification === "hybrid_oauth_or_direct"
     ? "The provider supports a private access token and a public OAuth 2.0 app."
+    : classification === "undetermined"
+    ? ""
     : "The provider uses OAuth 2.0 authorization code flow.";
   const hydrated = executeMode2Dynamic({
     ...input,
-    docContent: `${input.docContent || ""}\n${classificationHints}`,
+    docContent: classification === "undetermined" ? (input.docContent || "") : `${input.docContent || ""}\n${classificationHints}`,
   });
 
-  if (extraction.supportedAuthSchemes.length > 0) {
+  if (classification === "undetermined") {
+    hydrated.readinessSummary.authPathClassification = "undetermined";
+    hydrated.supportedAuthSchemes.value = [];
+    hydrated.authSpec = {
+      mode: "undetermined",
+      missingEvidenceReason: extraction.rationale || "Insufficient documentation to determine auth method.",
+      suggestedActions: [
+        `Locate official developer documentation for ${input.appName}`,
+        "Determine whether the provider uses OAuth 2.0, API keys, or personal access tokens",
+        "Re-run the live investigation with the official documentation URL in the override field",
+      ],
+    };
+    hydrated.composioIntegration.recommendedScheme = "NONE";
+  } else if (extraction.supportedAuthSchemes.length > 0) {
     hydrated.supportedAuthSchemes.value = extraction.supportedAuthSchemes;
     hydrated.supportedAuthSchemes.evidence = {
       kind: "unverified_hypothesis",

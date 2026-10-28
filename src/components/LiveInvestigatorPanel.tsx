@@ -44,6 +44,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [investigationResult, setInvestigationResult] = useState<InvestigationResponse | null>(null);
   const [activeStep, setActiveStep] = useState<string>("IDLE");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [proxyStatus, setProxyStatus] = useState<"checking" | "online" | "offline">("checking");
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +78,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
     setIsRunning(true);
     setInvestigationResult(null);
     setTerminalLogs([]);
+    setErrorMessage(null);
 
     const timestamp = new Date().toISOString();
     const isUrl = /^https?:\/\//i.test(appInput.trim());
@@ -140,10 +142,13 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       const response = await fetch("/api/investigate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appName: targetName, websiteUrl: targetUrl, mode, catalogBaseline }),
+        body: JSON.stringify({ appName: targetName, websiteUrl: targetUrl, userOverrideUrl: urlInput.trim() || undefined, mode, catalogBaseline }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.success) {
+      if (Array.isArray(payload.logs) && payload.logs.length > 0) {
+        setTerminalLogs((prev) => [...prev, ...payload.logs]);
+      }
+      if (!response.ok || !payload.success || payload.retrievalStatus === "failed") {
         throw new Error(payload.error || `Investigation API returned HTTP ${response.status}`);
       }
       const res = payload as InvestigationResponse;
@@ -154,6 +159,8 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       setInvestigationResult(res);
       setActiveStep("COMPLETE");
     } catch (err: any) {
+      const msg = err.message || String(err);
+      setErrorMessage(msg);
       setTerminalLogs((prev) => [
         ...prev,
         `[${new Date().toISOString()}] [ERROR] Investigation failed: ${err.message || String(err)}`,
@@ -172,12 +179,22 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
     if (log.includes("[EVIDENCE]")) return "text-amber-400";
     if (log.includes("[COMPOSIO]")) return "text-indigo-400";
     if (log.includes("[SYNTHESIS]")) return "text-emerald-400";
+    if (log.includes("[SECURITY]")) return "text-rose-400";
+    if (log.includes("[OVERRIDE]")) return "text-amber-400";
+    if (log.includes("[DISCOVERY]")) return "text-indigo-400";
     if (log.includes("[ERROR]")) return "text-rose-400";
     return "text-slate-300";
   };
 
   const renderAuthPathBadge = (classification: string) => {
     switch (classification) {
+      case "undetermined":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-950/70 text-amber-300 border border-amber-500/40">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span>Authentication Undetermined</span>
+          </span>
+        );
       case "oauth_required":
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-950/70 text-purple-300 border border-purple-500/40">
@@ -410,6 +427,17 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
           <div ref={logsEndRef} />
         </div>
       </section>
+
+      {/* Investigation Error Alert */}
+      {errorMessage && (
+        <section className="glass-card p-6 rounded-2xl border border-rose-500/40 bg-rose-950/30 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h2 className="text-sm font-bold text-rose-200">Investigation Failed</h2>
+            <p className="text-xs text-rose-300 font-mono leading-relaxed">{errorMessage}</p>
+          </div>
+        </section>
+      )}
 
       {/* Generated Guide Preview */}
       {investigationResult && (

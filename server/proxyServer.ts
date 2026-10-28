@@ -13,14 +13,17 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import * as cheerio from "cheerio";
 import TurndownService from "turndown";
-import { validateSsrfTarget } from "../src/agent/sanitizer.js";
+import { validateSsrfTarget, validateSsrfTargetWithDns } from "../src/agent/sanitizer.js";
 import type { AuthPathClassification, CatalogAuthBaseline, ConcreteAuthScheme } from "../src/types/guide.js";
 import {
   enforceDocumentEvidence,
   investigateApp,
+  synchronizeInvestigationAnalysis,
   TrustedSourceMetadata,
   validateIntegrationReadinessGuide,
 } from "../src/agent/investigatorEngine.js";
+import { selectInvestigationSource } from "../src/utils/investigationSource.js";
+import { WebDiscoveryPipeline } from "../src/agent/searchDiscovery.js";
 
 export const app = express();
 
@@ -49,6 +52,32 @@ const turndown = new TurndownService({
 
 // Configure Turndown rules: remove script, style, nav, etc. in case raw tags leak
 turndown.remove(["script", "style", "noscript", "iframe", "svg", "button", "nav", "footer", "header", "aside"] as any);
+
+// Preserve code blocks inside <pre> with language class and formatting
+turndown.addRule("preserveFencedCodeBlocks", {
+  filter: (node) => node.nodeName === "PRE" || node.nodeName === "pre",
+  replacement: (content, node) => {
+    const el = node as any;
+    const rawText = el.textContent ?? content ?? "";
+    const text = String(rawText).replace(/\r\n/g, "\n").trim();
+    const preClass = typeof el.getAttribute === "function" ? (el.getAttribute("class") || "") : (el.className || "");
+    let codeClass = "";
+    if (typeof el.querySelector === "function") {
+      const codeChild = el.querySelector("code");
+      if (codeChild) {
+        codeClass = typeof codeChild.getAttribute === "function" ? (codeChild.getAttribute("class") || "") : (codeChild.className || "");
+      }
+    } else if (Array.isArray(el.childNodes)) {
+      const codeChild = el.childNodes.find((c: any) => c.nodeName === "CODE" || c.nodeName === "code");
+      if (codeChild) {
+        codeClass = typeof codeChild.getAttribute === "function" ? (codeChild.getAttribute("class") || "") : (codeChild.className || "");
+      }
+    }
+    const match = `${codeClass} ${preClass}`.match(/language-([a-zA-Z0-9_\-]+)/i);
+    const language = match ? match[1] : "";
+    return `\n\n\`\`\`${language}\n${text}\n\`\`\`\n\n`;
+  },
+});
 
 class ResponseTooLargeError extends Error {
   constructor() {
@@ -115,7 +144,7 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
   httpStatus?: number;
 }> {
   // 1. SSRF Guard
-  const ssrfCheck = validateSsrfTarget(targetUrl);
+  const ssrfCheck = await validateSsrfTargetWithDns(targetUrl, { skipDnsInTest: true });
   if (!ssrfCheck.isValid || !ssrfCheck.allowed) {
     return {
       success: false,
@@ -160,7 +189,7 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
     let response: globalThis.Response | undefined;
     const maxRedirects = 4;
     for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-      const hopSsrf = validateSsrfTarget(currentUrl);
+      const hopSsrf = await validateSsrfTargetWithDns(currentUrl, { skipDnsInTest: true });
       if (!hopSsrf.isValid || !hopSsrf.allowed) {
         return {
           success: false,
@@ -323,10 +352,15 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
     // 5. Convert to Markdown via Turndown
     let markdown = turndown.turndown(mainHtml).trim();
 
-    // 6. Enforce 15,000 Character Budget
+    // 6. Enforce 15,000 Character Budget with balanced code fences
     if (markdown.length > 15000) {
+      let truncated = markdown.substring(0, 15000);
+      const fenceCount = (truncated.match(/```/g) || []).length;
+      if (fenceCount % 2 !== 0) {
+        truncated += "\n```";
+      }
       markdown =
-        markdown.substring(0, 15000) +
+        truncated +
         "\n\n[Content truncated to 15,000 character budget...]";
     }
 
@@ -435,7 +469,7 @@ app.post("/api/retrieve", handleRetrieve);
 // Route 3: POST /api/investigate
 // ============================================================================
 export async function handleInvestigate(req: Request, res: Response) {
-  const { appName, websiteUrl, mode, forceMode, docContent, catalogBaseline } = req.body;
+  const { appName, websiteUrl, userOverrideUrl, mode, forceMode, docContent, catalogBaseline } = req.body;
 
   if (!appName || typeof appName !== "string" || appName.trim() === "") {
     res.status(400).json({
@@ -448,16 +482,91 @@ export async function handleInvestigate(req: Request, res: Response) {
   try {
     let resolvedDocContent = typeof docContent === "string" ? docContent : undefined;
     let trustedServerSource: TrustedSourceMetadata | undefined;
-    const targetDocUrl = (typeof catalogBaseline?.authDocUrl === "string" && catalogBaseline.authDocUrl.trim() !== "")
-      ? catalogBaseline.authDocUrl.trim()
-      : (typeof websiteUrl === "string" ? websiteUrl.trim() : undefined);
-    let resolvedWebsiteUrl = targetDocUrl;
+    let effectiveForceMode = forceMode || "auto";
     const retrievalLogs: string[] = [];
     const evidenceLogs: string[] = [];
 
-    // Always prefer a fresh, server-fetched source when a URL is supplied.
-    if (resolvedWebsiteUrl) {
-      const retrieval = await fetchAndCleanDoc(resolvedWebsiteUrl);
+    // 1. Authoritative Investigation Source Selection
+    let sourceSelection = selectInvestigationSource({
+      userOverrideUrl: typeof userOverrideUrl === "string" ? userOverrideUrl : undefined,
+      catalogAuthDocUrl: typeof catalogBaseline?.authDocUrl === "string" ? catalogBaseline.authDocUrl : undefined,
+      websiteUrl: typeof websiteUrl === "string" ? websiteUrl : undefined,
+    });
+
+    // If no explicit source and no caller-supplied doc content, run web discovery pipeline
+    if (sourceSelection.sourceType === "none" && !resolvedDocContent) {
+      const discoveryPipeline = new WebDiscoveryPipeline();
+      const discovered = await discoveryPipeline.discover({
+        appName: appName.trim(),
+        websiteUrl: typeof websiteUrl === "string" ? websiteUrl.trim() : undefined,
+      });
+      if (discovered) {
+        retrievalLogs.push(
+          `[DISCOVERY] Discovered documentation via ${discovered.sourceProvider}: ${discovered.url} (confidence score: ${discovered.confidenceScore}).`
+        );
+        sourceSelection = {
+          sourceType: "discovered_url",
+          url: discovered.url,
+          isOverride: false,
+          notes: `Discovered documentation via ${discovered.sourceProvider}`,
+        };
+      }
+    }
+
+    // 2. Strict Override Precedence & Isolation Branch
+    if (sourceSelection.sourceType === "user_override") {
+      const overrideUrl = sourceSelection.url!;
+      retrievalLogs.push(`[TRIAGE] Selected source: user_override (${overrideUrl})`);
+      effectiveForceMode = "dynamic_only";
+
+      const ssrfCheck = await validateSsrfTargetWithDns(overrideUrl, { skipDnsInTest: true });
+      if (!ssrfCheck.isValid || !ssrfCheck.allowed) {
+        res.status(400).json({
+          success: false,
+          retrievalStatus: "failed",
+          selectedSource: sourceSelection,
+          error: `Override URL validation failed: ${ssrfCheck.error}`,
+          logs: [
+            ...retrievalLogs,
+            `[SECURITY] Override URL validation failed: ${ssrfCheck.error}`,
+            `[OVERRIDE] Isolated failure: fallback to catalog/registry is strictly prohibited.`,
+          ],
+          appName: appName.trim(),
+          authPathClassification: "undetermined",
+        });
+        return;
+      }
+
+      const retrieval = await fetchAndCleanDoc(overrideUrl);
+      if (!retrieval.success) {
+        res.status(retrieval.httpStatus || 502).json({
+          success: false,
+          retrievalStatus: "failed",
+          selectedSource: sourceSelection,
+          error: `Override URL retrieval failed: ${retrieval.error}`,
+          logs: [
+            ...retrievalLogs,
+            `[PROXY] Retrieval failed: ${retrieval.error}`,
+            `[OVERRIDE] Isolated failure: fallback to catalog/registry is strictly prohibited.`,
+          ],
+          appName: appName.trim(),
+          authPathClassification: "undetermined",
+        });
+        return;
+      }
+
+      resolvedDocContent = retrieval.markdown;
+      trustedServerSource = {
+        text: retrieval.markdown,
+        url: retrieval.finalUrl,
+        title: retrieval.title,
+      };
+      retrievalLogs.push(
+        `[PROXY] Retrieved ${retrieval.title || "override documentation"} from ${retrieval.finalUrl} (${retrieval.characterCount} characters${retrieval.cached ? ", cached" : ""}).`
+      );
+    } else if (sourceSelection.url) {
+      // Non-override: Catalog auth doc, discovered URL, or website URL
+      const retrieval = await fetchAndCleanDoc(sourceSelection.url);
       if (retrieval.success) {
         resolvedDocContent = retrieval.markdown;
         trustedServerSource = {
@@ -465,7 +574,6 @@ export async function handleInvestigate(req: Request, res: Response) {
           url: retrieval.finalUrl,
           title: retrieval.title,
         };
-        resolvedWebsiteUrl = retrieval.finalUrl;
         retrievalLogs.push(
           `[PROXY] Retrieved ${retrieval.title || "provider documentation"} from ${retrieval.finalUrl} (${retrieval.characterCount} characters${retrieval.cached ? ", cached" : ""}).`
         );
@@ -481,7 +589,12 @@ export async function handleInvestigate(req: Request, res: Response) {
       );
     }
 
-    const validAuthPaths: AuthPathClassification[] = ["oauth_required", "hybrid_oauth_or_direct", "direct_credential_only"];
+    const validAuthPaths: AuthPathClassification[] = [
+      "oauth_required",
+      "hybrid_oauth_or_direct",
+      "direct_credential_only",
+      "undetermined",
+    ];
     const validSchemes: ConcreteAuthScheme[] = ["OAUTH2", "OAUTH1", "API_KEY", "BEARER_TOKEN", "BASIC_AUTH"];
     const resolvedCatalogBaseline: CatalogAuthBaseline | undefined =
       catalogBaseline && typeof catalogBaseline === "object" &&
@@ -496,19 +609,22 @@ export async function handleInvestigate(req: Request, res: Response) {
           }
         : undefined;
 
+    const targetUrl = trustedServerSource?.url || sourceSelection.url || (typeof websiteUrl === "string" ? websiteUrl.trim() : undefined);
+
     const result = await investigateApp({
       appName: appName.trim(),
-      websiteUrl: resolvedWebsiteUrl,
+      websiteUrl: targetUrl,
       docContent: resolvedDocContent,
       catalogBaseline: resolvedCatalogBaseline,
       mode: mode === "ai_assisted" ? "ai_assisted" : "deterministic",
-      forceMode: forceMode || "auto",
+      forceMode: effectiveForceMode,
     });
 
     let guide = result.guide;
     if (result.modeUsed !== "curated_fast_path") {
       const evidenceCheck = enforceDocumentEvidence(result.guide, trustedServerSource);
       guide = evidenceCheck.guide;
+      guide = synchronizeInvestigationAnalysis(guide);
       if (evidenceCheck.downgradedCount > 0) {
         evidenceLogs.push(
           `[EVIDENCE] ${evidenceCheck.downgradedCount} generated claims lacked a matching server-retrieved quote or an executed live test and were labeled Hypothesis.`
@@ -516,7 +632,7 @@ export async function handleInvestigate(req: Request, res: Response) {
       }
     }
 
-    if (!resolvedWebsiteUrl && !docContent) {
+    if (!targetUrl && !docContent) {
       retrievalLogs.push(
         result.modeUsed === "curated_fast_path"
           ? "[PROXY] No live provider URL was supplied; the matching curated guide was used."
@@ -539,6 +655,8 @@ export async function handleInvestigate(req: Request, res: Response) {
       success: true,
       guide,
       modeUsed: result.modeUsed,
+      retrievalStatus: trustedServerSource ? "success" : "not_attempted",
+      selectedSource: sourceSelection,
       logs: [...retrievalLogs, ...result.logs, ...evidenceLogs],
       appName: guide.appName,
       authPathClassification: guide.readinessSummary.authPathClassification,
