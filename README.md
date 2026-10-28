@@ -4,7 +4,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61dafb.svg?logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite)](https://vitejs.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg?logo=tailwindcss)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-242%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-715%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
 [![TypeCheck](https://img.shields.io/badge/tsc-0%20errors-brightgreen.svg)](https://www.typescriptlang.org/)
 > An evidence-first research tool for the authentication paths AI-agent builders encounter: OAuth, direct credentials, and hybrid setups. It keeps provider endpoints separate from Composio callback guidance and distinguishes documented claims from hypotheses.
 
@@ -37,7 +37,7 @@ GitHub Actions runs the deterministic test suite and production build on pushes 
 8. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
 9. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
 10. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
-11. [Automated Test Suite Verification (242 Tests)](#-automated-test-suite-verification-242-tests)
+11. [Automated Test Suite Verification (715 Tests)](#-automated-test-suite-verification-715-tests)
 12. [Quickstart & Local Development](#-quickstart--local-development)
 13. [Project Directory Layout](#-project-directory-layout)
 
@@ -371,13 +371,13 @@ The Copilot maintains complete transparency regarding what was tested live, what
 
 ---
 
-## ✅ Automated Test Suite Verification (242 Tests)
+## ✅ Automated Test Suite Verification (715 Tests)
 
-The latest verification passed **242 tests across 13 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
+The latest verification passed **715 tests across 16 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
 
 ```
-Test Files  13 passed (13)
-     Tests  242 passed (242)
+Test Files  16 passed (16)
+     Tests  715 passed (715)
 ```
 
 ### Test Suite Structure:
@@ -397,6 +397,9 @@ Test Files  13 passed (13)
 | 11 | `tests/unit/frontendComponents.test.ts` | 13 | React component contracts: `ClaimEvidenceBadge`, `EndpointsAndCallbackBox`, `ExportEngine` | ✅ PASS |
 | 12 | `tests/unit/proxyServer.test.ts` | 16 | Express API routes, retrieval failures, SSRF guard, evidence downgrade, and caching | ✅ PASS |
 | 13 | `tests/unit/catalogConsistency.test.ts` | 12 | 100-app catalog baseline consistency, Supabase direct key regression defense, and investigator unification | ✅ PASS |
+| 14 | `tests/unit/liveInvestigationRobustness.test.ts` | 24 | Override precedence, undetermined state, code-preserving excerpt grounding, and Figma/Spotify/Postmark models | ✅ PASS |
+| 15 | `tests/unit/empirical_challenger_r3_r4_r5.test.ts` | 14 | Empirical challenger tests for custom headers, undetermined auth specs, and evidence verification | ✅ PASS |
+| 16 | `tests/unit/adversarial_r1_r2_stress.test.ts` | 435 | Comprehensive adversarial stress tests for web discovery, SSRF defenses, and override isolation | ✅ PASS |
 
 ---
 
