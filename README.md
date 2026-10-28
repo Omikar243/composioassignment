@@ -4,7 +4,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61dafb.svg?logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite)](https://vitejs.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg?logo=tailwindcss)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-231%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-242%20Test%20Cases-success.svg?logo=vitest)](https://vitest.dev/)
 [![TypeCheck](https://img.shields.io/badge/tsc-0%20errors-brightgreen.svg)](https://www.typescriptlang.org/)
 > An evidence-first research tool for the authentication paths AI-agent builders encounter: OAuth, direct credentials, and hybrid setups. It keeps provider endpoints separate from Composio callback guidance and distinguishes documented claims from hypotheses.
 
@@ -35,7 +35,7 @@ GitHub Actions runs the deterministic test suite and production build on pushes 
 6. [Backend Retrieval Proxy & Dual-Mode Investigator Engine](#-backend-retrieval-proxy--dual-mode-investigator-engine)
 7. [Isolated Endpoints & Callback UX](#-isolated-endpoints--callback-ux)
 8. [Honest Forensic Verification Audit](#-honest-forensic-verification-audit)
-9. [Automated Test Suite Verification (230 Tests)](#-automated-test-suite-verification-230-tests)
+9. [Automated Test Suite Verification (242 Tests)](#-automated-test-suite-verification-242-tests)
 10. [Quickstart & Local Development](#-quickstart--local-development)
 11. [Project Directory Layout](#-project-directory-layout)
 
@@ -170,9 +170,10 @@ Five canonical SaaS integrations were deeply researched, verified against offici
 The Copilot features a comprehensive 100-app catalog index spanning 10 core SaaS categories with exactly 10 apps per category:
 
 ### 1. Catalog Distribution
-- **`oauth_required`**: Exactly 50% (50 apps)
-- **`hybrid_oauth_or_direct`**: Exactly 25% (25 apps)
-- **`direct_credential_only`**: Exactly 25% (25 apps)
+- **`oauth_required`**: 44% (44 apps)
+- **`hybrid_oauth_or_direct`**: 31% (31 apps)
+- **`direct_credential_only`**: 25% (25 apps)
+*(Reconciled via forensic documentation audit: platforms supporting both internal PATs/private app tokens and distributed OAuth apps such as GitLab, Jira, HubSpot, Zendesk, Sentry, and PagerDuty are categorized as Hybrid to reflect dual integration realities).*
 
 ### 2. Category Breakdown (10 Apps Each)
 1. **Developer Tools** (e.g. GitHub, GitLab, Jira, Linear, Sentry, Bitbucket, Postman, Datadog, CircleCI, Supabase)
@@ -261,13 +262,13 @@ The Copilot maintains complete transparency regarding what was tested live, what
 
 ---
 
-## ✅ Automated Test Suite Verification (230 Tests)
+## ✅ Automated Test Suite Verification (242 Tests)
 
-The latest verification passed **230 tests across 12 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
+The latest verification passed **242 tests across 13 test suites** and the TypeScript production build. Provider behavior in unit tests is mocked; no API key is committed or required to run the suite:
 
 ```
-Test Files  12 passed (12)
-     Tests  230 passed (230)
+Test Files  13 passed (13)
+     Tests  242 passed (242)
 ```
 
 ### Test Suite Structure:
@@ -285,7 +286,8 @@ Test Files  12 passed (12)
 | 9 | `tests/unit/guideValidation.test.ts` | 32 | Comprehensive schema verification across all 5 deep curated guides and edge cases | ✅ PASS |
 | 10 | `tests/unit/catalog.test.ts` | 14 | 100-app catalog distribution (50% OAuth / 25% Hybrid / 25% Direct), 10 categories (10 apps each), review gate taxonomy | ✅ PASS |
 | 11 | `tests/unit/frontendComponents.test.ts` | 13 | React component contracts: `ClaimEvidenceBadge`, `EndpointsAndCallbackBox`, `ExportEngine` | ✅ PASS |
-| 12 | `tests/unit/proxyServer.test.ts` | 15 | Express API routes, retrieval failures, SSRF guard, evidence downgrade, and caching | ✅ PASS |
+| 12 | `tests/unit/proxyServer.test.ts` | 16 | Express API routes, retrieval failures, SSRF guard, evidence downgrade, and caching | ✅ PASS |
+| 13 | `tests/unit/catalogConsistency.test.ts` | 12 | 100-app catalog baseline consistency, Supabase direct key regression defense, and investigator unification | ✅ PASS |
 
 ---
 
