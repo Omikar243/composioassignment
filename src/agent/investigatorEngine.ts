@@ -212,8 +212,8 @@ function validateOAuthSpec(spec: any, errors: string[]): void {
     errors.push("OAuthProtocolSpec.providerEndpoints is required");
     return;
   }
-  validateTraceableString(spec.providerEndpoints.authorizationUrl, "providerEndpoints.authorizationUrl", errors);
-  validateTraceableString(spec.providerEndpoints.tokenUrl, "providerEndpoints.tokenUrl", errors);
+  validateProviderEndpoint(spec.providerEndpoints.authorizationUrl, "providerEndpoints.authorizationUrl", "authorization", errors);
+  validateProviderEndpoint(spec.providerEndpoints.tokenUrl, "providerEndpoints.tokenUrl", "token", errors);
 
   // Endpoint isolation: authorizationUrl and tokenUrl must never be Composio callbacks
   const authUrl = String(spec.providerEndpoints.authorizationUrl?.value || "").toLowerCase();
@@ -228,6 +228,23 @@ function validateOAuthSpec(spec: any, errors: string[]): void {
     if (typeof spec.composioCallbackGuidance.howToLocateAndVerify !== "string") {
       errors.push("composioCallbackGuidance.howToLocateAndVerify must be a string");
     }
+  }
+}
+
+const UNKNOWN_ENDPOINT = "Not identified in retrieved documentation";
+
+function validateProviderEndpoint(
+  traceable: any,
+  fieldName: string,
+  type: "authorization" | "token",
+  errors: string[],
+): void {
+  validateTraceableString(traceable, fieldName, errors);
+  if (!traceable || typeof traceable.value !== "string" || traceable.value === UNKNOWN_ENDPOINT) return;
+
+  const sanitized = sanitizeAndValidateEndpoint(traceable.value, { type });
+  if (!sanitized.isValid) {
+    errors.push(`${fieldName}.value must be a valid HTTPS provider endpoint: ${sanitized.error || "invalid endpoint"}`);
   }
 }
 
@@ -318,10 +335,18 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
   const lowerName = name.toLowerCase();
   const lowerText = rawText.toLowerCase();
 
-  const domain = websiteUrl
-    ? new URL(websiteUrl.startsWith("http") ? websiteUrl : `https://${websiteUrl}`).hostname
-    : `${lowerName.replace(/[^a-z0-9]/g, "")}.com`;
-  const canonicalUrl = websiteUrl || `https://${domain}`;
+  let parsedWebsiteUrl: URL | undefined;
+  try {
+    if (websiteUrl) {
+      parsedWebsiteUrl = new URL(
+        websiteUrl.startsWith("http") ? websiteUrl : `https://${websiteUrl}`,
+      );
+    }
+  } catch {
+    parsedWebsiteUrl = undefined;
+  }
+  const domain = parsedWebsiteUrl?.hostname || `${lowerName.replace(/[^a-z0-9]/g, "")}.com`;
+  const canonicalUrl = parsedWebsiteUrl?.toString() || `https://${domain}`;
 
   // Step 1: Detect Auth Path Classification
   let authPath: AuthPathClassification = "oauth_required";
@@ -352,9 +377,10 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
     authPath = "oauth_required";
   }
 
-  // Step 2: Extract Endpoints for OAuth or Hybrid
-  let authorizationUrl = `https://${domain}/oauth/authorize`;
-  let tokenUrl = `https://api.${domain}/oauth/token`;
+  // Step 2: Extract endpoints only from known provider facts or retrieved text.
+  // Never turn a domain-shaped guess into a copyable integration instruction.
+  let authorizationUrl = UNKNOWN_ENDPOINT;
+  let tokenUrl = UNKNOWN_ENDPOINT;
   let pkceStatus: "required" | "supported_optional" | "not_mentioned_in_sources" = "not_mentioned_in_sources";
 
   // Dedicated ground truth checks for archetypes
@@ -385,6 +411,21 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       pkceStatus = "supported_optional";
     }
   }
+
+  const endpointEvidence = (value: string, label: string): ClaimEvidence =>
+    value === UNKNOWN_ENDPOINT
+      ? {
+          kind: "unverified_hypothesis",
+          hypothesisBasis: "No provider endpoint was extracted from a verified curated guide or the retrieved documentation.",
+          whatRemainsUnverified: `${label} endpoint must be located in the provider's current OAuth documentation before use.`,
+          ...(parsedWebsiteUrl ? { relatedSourceUrl: canonicalUrl } : {}),
+        }
+      : {
+          kind: "documented_not_tested",
+          sourceTitle: `${name} OAuth Documentation`,
+          sourceUrl: canonicalUrl,
+          whatSourceExplicitlyStates: `${label} endpoint: ${value}`,
+        };
 
   // Step 3: Epistemic Invariants
   // Unfamiliar dynamic app MUST have composioManagedAuthStatus = "unknown"
@@ -507,21 +548,11 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       providerEndpoints: {
         authorizationUrl: {
           value: authorizationUrl,
-          evidence: {
-            kind: "documented_not_tested",
-            sourceTitle: `${name} OAuth Documentation`,
-            sourceUrl: canonicalUrl,
-            whatSourceExplicitlyStates: `Authorization endpoint: ${authorizationUrl}`,
-          },
+          evidence: endpointEvidence(authorizationUrl, "Authorization"),
         },
         tokenUrl: {
           value: tokenUrl,
-          evidence: {
-            kind: "documented_not_tested",
-            sourceTitle: `${name} OAuth Documentation`,
-            sourceUrl: canonicalUrl,
-            whatSourceExplicitlyStates: `Token endpoint: ${tokenUrl}`,
-          },
+          evidence: endpointEvidence(tokenUrl, "Token"),
         },
       },
       composioCallbackGuidance: {
@@ -596,21 +627,11 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
       providerEndpoints: {
         authorizationUrl: {
           value: authorizationUrl,
-          evidence: {
-            kind: "documented_not_tested",
-            sourceTitle: `${name} OAuth 2.0 Specification`,
-            sourceUrl: canonicalUrl,
-            whatSourceExplicitlyStates: `Authorization endpoint: ${authorizationUrl}`,
-          },
+          evidence: endpointEvidence(authorizationUrl, "Authorization"),
         },
         tokenUrl: {
           value: tokenUrl,
-          evidence: {
-            kind: "documented_not_tested",
-            sourceTitle: `${name} OAuth 2.0 Specification`,
-            sourceUrl: canonicalUrl,
-            whatSourceExplicitlyStates: `Token exchange endpoint: ${tokenUrl}`,
-          },
+          evidence: endpointEvidence(tokenUrl, "Token"),
         },
       },
       composioCallbackGuidance: {
@@ -899,12 +920,34 @@ export function executeMode2Dynamic(input: DynamicInvestigationInput): Integrati
  * Retain a Documented label only when its exact statement appears in trusted
  * source text; generated output can never claim a live test that was not run.
  */
+export interface TrustedSourceMetadata {
+  text: string;
+  url?: string;
+  title?: string;
+}
+
 export function enforceDocumentEvidence<T extends IntegrationReadinessGuide>(
   guide: T,
-  trustedSourceText?: string
+  trustedSource?: string | TrustedSourceMetadata,
 ): { guide: T; downgradedCount: number } {
   const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-  const normalizedSource = normalize(trustedSourceText || "");
+  const sourceMetadata: TrustedSourceMetadata = typeof trustedSource === "string"
+    ? { text: trustedSource }
+    : (trustedSource || { text: "" });
+  const normalizedSource = normalize(sourceMetadata.text || "");
+  const normalizeUrl = (value?: string) => {
+    if (!value) return undefined;
+    try {
+      const parsed = new URL(value);
+      parsed.hash = "";
+      parsed.search = "";
+      parsed.pathname = parsed.pathname.replace(/\/$/, "") || "/";
+      return parsed.toString().toLowerCase();
+    } catch {
+      return undefined;
+    }
+  };
+  const normalizedSourceUrl = normalizeUrl(sourceMetadata.url);
   let downgradedCount = 0;
 
   const visit = (value: any): any => {
@@ -925,10 +968,14 @@ export function enforceDocumentEvidence<T extends IntegrationReadinessGuide>(
       const statement = typeof value.whatSourceExplicitlyStates === "string"
         ? normalize(value.whatSourceExplicitlyStates)
         : "";
-      if (statement.length >= 16 && normalizedSource.includes(statement)) return value;
+      const claimSourceUrl = normalizeUrl(typeof value.sourceUrl === "string" ? value.sourceUrl : undefined);
+      const sourceUrlMatches = !normalizedSourceUrl || !claimSourceUrl || claimSourceUrl === normalizedSourceUrl;
+      if (statement.length >= 16 && normalizedSource.includes(statement) && sourceUrlMatches) return value;
 
       downgradedCount += 1;
-      const basis = normalizedSource
+      const basis = normalizedSource && !sourceUrlMatches
+        ? "The generated claim cites a different source URL than the documentation retrieved for this request."
+        : normalizedSource
         ? "The generated quote was not found verbatim in the trusted documentation retrieved for this request."
         : "No trusted provider documentation was retrieved for this generated claim.";
       const unverified = statement
@@ -1052,6 +1099,44 @@ async function requestOpenAICompatibleGuide(
   }
 }
 
+function finalizeAiGuide(
+  rawJsonResponse: string,
+  input: DynamicInvestigationInput,
+  engine: "gemini_mode_b" | CompatibleProviderEngine,
+  logs: string[],
+): IntegrationReadinessGuide | undefined {
+  try {
+    const parsed = JSON.parse(rawJsonResponse);
+    const reasoningSanitized = stripPrivateReasoningFields(parsed);
+    if (reasoningSanitized.removedCount > 0) {
+      logs.push(`[PRIVACY] Removed ${reasoningSanitized.removedCount} model reasoning field(s); only the concise evidence-linked summary is exposed.`);
+    }
+
+    const evidenceChecked = enforceDocumentEvidence(
+      reasoningSanitized.value as IntegrationReadinessGuide,
+      { text: input.docContent || "", url: input.websiteUrl },
+    );
+    const validation = validateIntegrationReadinessGuide(evidenceChecked.guide);
+    if (!validation.isValid) {
+      logs.push(`${engine} payload failed schema validation (${validation.errors.length} errors); trying the next provider.`);
+      return undefined;
+    }
+
+    if (evidenceChecked.downgradedCount > 0) {
+      logs.push(`[EVIDENCE] ${evidenceChecked.downgradedCount} unsupported or unperformed evidence claims were downgraded to Hypothesis.`);
+    }
+    evidenceChecked.guide.investigationAnalysis = buildInvestigationAnalysis(
+      evidenceChecked.guide,
+      engine,
+    );
+    logs.push(`${engine} guide validated against IntegrationReadinessGuide schema.`);
+    return evidenceChecked.guide;
+  } catch {
+    logs.push(`${engine} returned malformed JSON; trying the next provider.`);
+    return undefined;
+  }
+}
+
 export async function executeModeBAIAssisted(
   input: DynamicInvestigationInput
 ): Promise<{
@@ -1074,8 +1159,6 @@ export async function executeModeBAIAssisted(
 
   try {
     // Attempt LLM generation if key is present
-    let rawJsonResponse: string | undefined;
-    let aiEngine: "gemini_mode_b" | CompatibleProviderEngine | undefined;
     const prompt = buildModeBPrompt(input);
 
     if (geminiKey) {
@@ -1103,7 +1186,7 @@ export async function executeModeBAIAssisted(
         );
         try {
           resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-1.5-flash"}:generateContent?key=${geminiKey}`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1131,7 +1214,12 @@ export async function executeModeBAIAssisted(
           clearTimeout(timeout);
         }
 
-        if (resp.ok) break;
+        if (resp?.ok) break;
+
+        if (!resp) {
+          logs.push("Gemini API returned no response; trying configured provider fallbacks.");
+          break;
+        }
 
         if (resp.status === 503) {
           logs.push("Gemini API returned HTTP 503. Skipping retries and trying configured provider fallbacks.");
@@ -1170,14 +1258,19 @@ export async function executeModeBAIAssisted(
       }
 
       if (resp?.ok) {
-        rawJsonResponse = responsePayload?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawJsonResponse) aiEngine = "gemini_mode_b";
+        const rawJsonResponse = responsePayload?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawJsonResponse) {
+          const guide = finalizeAiGuide(rawJsonResponse, input, "gemini_mode_b", logs);
+          if (guide) return { guide, logs, modeUsed: "ai_assisted" };
+        } else {
+          logs.push("Gemini returned an empty content payload; trying configured provider fallbacks.");
+        }
       } else if (!resp) {
         logs.push("Gemini API did not return a response; trying configured provider fallbacks.");
       }
     }
 
-    if (!rawJsonResponse && groqKey) {
+    if (groqKey) {
       const groqResult = await requestOpenAICompatibleGuide(
         "Groq",
         "https://api.groq.com/openai/v1/chat/completions",
@@ -1188,14 +1281,14 @@ export async function executeModeBAIAssisted(
         logs
       );
       if (groqResult) {
-        rawJsonResponse = groqResult.content;
-        aiEngine = groqResult.engine;
+        const guide = finalizeAiGuide(groqResult.content, input, groqResult.engine, logs);
+        if (guide) return { guide, logs, modeUsed: "ai_assisted" };
       }
-    } else if (!rawJsonResponse) {
+    } else {
       logs.push("GROQ_API_KEY is not configured; skipping Groq fallback.");
     }
 
-    if (!rawJsonResponse && openaiKey) {
+    if (openaiKey) {
       const openaiResult = await requestOpenAICompatibleGuide(
         "OpenAI",
         "https://api.openai.com/v1/chat/completions",
@@ -1206,34 +1299,8 @@ export async function executeModeBAIAssisted(
         logs
       );
       if (openaiResult) {
-        rawJsonResponse = openaiResult.content;
-        aiEngine = openaiResult.engine;
-      }
-    }
-
-    if (rawJsonResponse) {
-      const parsed = JSON.parse(rawJsonResponse);
-      const reasoningSanitized = stripPrivateReasoningFields(parsed);
-      if (reasoningSanitized.removedCount > 0) {
-        logs.push(`[PRIVACY] Removed ${reasoningSanitized.removedCount} model reasoning field(s); only the concise evidence-linked summary is exposed.`);
-      }
-      const evidenceChecked = enforceDocumentEvidence(
-        reasoningSanitized.value as IntegrationReadinessGuide,
-        input.docContent
-      );
-      const validation = validateIntegrationReadinessGuide(evidenceChecked.guide);
-      if (validation.isValid) {
-        logs.push("AI-assisted guide validated against IntegrationReadinessGuide schema.");
-        if (evidenceChecked.downgradedCount > 0) {
-          logs.push(`[EVIDENCE] ${evidenceChecked.downgradedCount} unsupported or unperformed evidence claims were downgraded to Hypothesis.`);
-        }
-        evidenceChecked.guide.investigationAnalysis = buildInvestigationAnalysis(
-          evidenceChecked.guide,
-          aiEngine || "gemini_mode_b"
-        );
-        return { guide: evidenceChecked.guide, logs, modeUsed: "ai_assisted" };
-      } else {
-        logs.push(`AI generated payload failed schema validation (${validation.errors.length} errors). Falling back.`);
+        const guide = finalizeAiGuide(openaiResult.content, input, openaiResult.engine, logs);
+        if (guide) return { guide, logs, modeUsed: "ai_assisted" };
       }
     }
   } catch (err: any) {

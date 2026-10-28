@@ -260,7 +260,7 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
     });
 
     describe("Arbitrary Unfamiliar App with Documentation Text Input", () => {
-      it("extracts endpoints and PKCE from arbitrary documentation content", () => {
+    it("extracts endpoints and PKCE from arbitrary documentation content", () => {
         const sampleDoc = `
           # Acme Developer API
           Acme uses standard OAuth 2.0.
@@ -280,6 +280,20 @@ describe("Milestone 2: Investigator Engine & Unfamiliar App Research Suite", () 
         expect(spec.providerEndpoints.authorizationUrl.value).toBe("https://acme.io/oauth2/authorize");
         expect(spec.providerEndpoints.tokenUrl.value).toBe("https://acme.io/oauth2/token");
         expect(spec.pkceRequired.value).toBe("supported_optional");
+        expect(validateIntegrationReadinessGuide(guide).isValid).toBe(true);
+      });
+
+      it("does not invent copyable endpoints when the source contains no endpoint", () => {
+        const guide = executeMode2Dynamic({
+          appName: "Unknown SaaS",
+          websiteUrl: "https://unknown.example",
+          docContent: "This documentation does not yet describe an OAuth authorization or token endpoint.",
+        });
+
+        const spec = guide.authSpec as OAuthProtocolSpec;
+        expect(spec.providerEndpoints.authorizationUrl.value).toBe("Not identified in retrieved documentation");
+        expect(spec.providerEndpoints.tokenUrl.value).toBe("Not identified in retrieved documentation");
+        expect(spec.providerEndpoints.authorizationUrl.evidence.kind).toBe("unverified_hypothesis");
         expect(validateIntegrationReadinessGuide(guide).isValid).toBe(true);
       });
     });

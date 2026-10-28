@@ -26,6 +26,8 @@ export interface EndpointsAndCallbackBoxProps {
   appName?: string;
 }
 
+const isCopyableEndpoint = (value: string): boolean => /^https:\/\//i.test(value);
+
 export const EndpointsAndCallbackBox: React.FC<EndpointsAndCallbackBoxProps> = ({
   endpoints,
   callbackGuidance,
@@ -105,19 +107,24 @@ export const EndpointsAndCallbackBox: React.FC<EndpointsAndCallbackBoxProps> = (
                   <span className="truncate flex-1 select-all">
                     {endpoints.authorizationUrl.value}
                   </span>
-                  <button
-                    onClick={() =>
-                      handleCopy("auth_url", endpoints.authorizationUrl.value)
-                    }
-                    className="p-1 rounded bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition"
-                    title="Copy Authorization URL"
-                  >
-                    {copiedKey === "auth_url" ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
+                  {isCopyableEndpoint(endpoints.authorizationUrl.value) ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy("auth_url", endpoints.authorizationUrl.value)
+                      }
+                      className="p-1 rounded bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition"
+                      title="Copy Authorization URL"
+                    >
+                      {copiedKey === "auth_url" ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  ) : (
+                    <HelpCircle className="w-3.5 h-3.5 text-amber-400" aria-label="Authorization endpoint not verified" />
+                  )}
                 </div>
               </div>
 
@@ -133,19 +140,24 @@ export const EndpointsAndCallbackBox: React.FC<EndpointsAndCallbackBoxProps> = (
                   <span className="truncate flex-1 select-all">
                     {endpoints.tokenUrl.value}
                   </span>
-                  <button
-                    onClick={() =>
-                      handleCopy("token_url", endpoints.tokenUrl.value)
-                    }
-                    className="p-1 rounded bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition"
-                    title="Copy Token Exchange URL"
-                  >
-                    {copiedKey === "token_url" ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
+                  {isCopyableEndpoint(endpoints.tokenUrl.value) ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy("token_url", endpoints.tokenUrl.value)
+                      }
+                      className="p-1 rounded bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition"
+                      title="Copy Token Exchange URL"
+                    >
+                      {copiedKey === "token_url" ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  ) : (
+                    <HelpCircle className="w-3.5 h-3.5 text-amber-400" aria-label="Token endpoint not verified" />
+                  )}
                 </div>
               </div>
 

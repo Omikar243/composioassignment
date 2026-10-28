@@ -17,6 +17,7 @@ import { validateSsrfTarget } from "../src/agent/sanitizer.js";
 import {
   enforceDocumentEvidence,
   investigateApp,
+  TrustedSourceMetadata,
   validateIntegrationReadinessGuide,
 } from "../src/agent/investigatorEngine.js";
 
@@ -35,6 +36,8 @@ interface CacheEntry {
 }
 const retrievalCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_CACHE_ENTRIES = 100;
+const MAX_RESPONSE_BYTES = 1_500_000;
 
 // Initialize TurndownService
 const turndown = new TurndownService({
@@ -45,6 +48,43 @@ const turndown = new TurndownService({
 
 // Configure Turndown rules: remove script, style, nav, etc. in case raw tags leak
 turndown.remove(["script", "style", "noscript", "iframe", "svg", "button", "nav", "footer", "header", "aside"] as any);
+
+class ResponseTooLargeError extends Error {
+  constructor() {
+    super(`Target response exceeded the ${MAX_RESPONSE_BYTES.toLocaleString()} byte limit`);
+    this.name = "ResponseTooLargeError";
+  }
+}
+
+async function readResponseTextWithinBudget(response: globalThis.Response): Promise<string> {
+  // Lightweight mocked responses used by the unit suite may not expose a stream.
+  // Real fetch responses do, so production reads are bounded before parsing HTML.
+  if (!response.body || typeof response.body.getReader !== "function") {
+    return response.text();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let bytesRead = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new ResponseTooLargeError();
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join("");
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 // ============================================================================
 // Route 1: GET /api/health
@@ -106,29 +146,95 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const response = await fetch(targetUrl, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 ComposioOAuthReadinessBot/1.0",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-      },
-    });
+    const requestHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 ComposioOAuthReadinessBot/1.0",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Cache-Control": "no-cache",
+    };
 
+    let currentUrl = targetUrl;
+    let response: globalThis.Response | undefined;
+    const maxRedirects = 4;
+    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+      const hopSsrf = validateSsrfTarget(currentUrl);
+      if (!hopSsrf.isValid || !hopSsrf.allowed) {
+        return {
+          success: false,
+          title: "",
+          markdown: "",
+          finalUrl: currentUrl,
+          characterCount: 0,
+          cached: false,
+          error: "Redirect target violated SSRF security guard",
+          httpStatus: 400,
+        };
+      }
+
+      response = await fetch(currentUrl, {
+        signal: controller.signal,
+        redirect: "manual",
+        headers: requestHeaders,
+      });
+
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      if (redirectCount === maxRedirects) {
+        return {
+          success: false,
+          title: "",
+          markdown: "",
+          finalUrl: currentUrl,
+          characterCount: 0,
+          cached: false,
+          error: `Too many redirects (maximum ${maxRedirects})`,
+          httpStatus: 508,
+        };
+      }
+
+      const location = response.headers.get("location");
+      if (!location) {
+        return {
+          success: false,
+          title: "",
+          markdown: "",
+          finalUrl: currentUrl,
+          characterCount: 0,
+          cached: false,
+          error: "Target returned a redirect without a Location header",
+          httpStatus: 502,
+        };
+      }
+
+      try {
+        currentUrl = new URL(location, currentUrl).toString();
+      } catch {
+        return {
+          success: false,
+          title: "",
+          markdown: "",
+          finalUrl: currentUrl,
+          characterCount: 0,
+          cached: false,
+          error: "Target returned an invalid redirect Location header",
+          httpStatus: 502,
+        };
+      }
+    }
+
+    if (!response) throw new Error("Target returned no response");
     clearTimeout(timeoutId);
 
     // Guard against post-redirect SSRF (redirected to internal IP)
-    const finalSsrf = validateSsrfTarget(response.url);
+    const finalUrl = response.url || currentUrl;
+    const finalSsrf = validateSsrfTarget(finalUrl);
     if (!finalSsrf.isValid || !finalSsrf.allowed) {
       return {
         success: false,
         title: "",
         markdown: "",
-        finalUrl: response.url,
+        finalUrl,
         characterCount: 0,
         cached: false,
         error: "Redirect target violated SSRF security guard",
@@ -145,7 +251,7 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
           status: "scrape_blocked",
           title: "Scrape Blocked",
           markdown: "",
-          finalUrl: response.url,
+          finalUrl,
           characterCount: 0,
           cached: false,
           error: "Target returned HTTP 403/503 (Cloudflare/Bot detection)",
@@ -159,7 +265,7 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
         success: false,
         title: "",
         markdown: "",
-        finalUrl: response.url,
+        finalUrl,
         characterCount: 0,
         cached: false,
         error: `Target server returned HTTP ${response.status}: ${response.statusText}`,
@@ -177,7 +283,7 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
         success: false,
         title: "",
         markdown: "",
-        finalUrl: response.url,
+        finalUrl,
         characterCount: 0,
         cached: false,
         error: `Invalid content type: '${contentType}'. Only HTML and text documents can be retrieved.`,
@@ -185,7 +291,7 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
       };
     }
 
-    const rawHtml = await response.text();
+    const rawHtml = await readResponseTextWithinBudget(response);
 
     // 4. Cheerio DOM Sanitization
     const $ = cheerio.load(rawHtml);
@@ -227,21 +333,38 @@ export async function fetchAndCleanDoc(targetUrl: string): Promise<{
       title,
       markdown,
       characterCount: markdown.length,
-      finalUrl: response.url,
+      finalUrl,
       cachedAt: Date.now(),
     };
+    while (retrievalCache.size >= MAX_CACHE_ENTRIES) {
+      const oldestKey = retrievalCache.keys().next().value;
+      if (!oldestKey) break;
+      retrievalCache.delete(oldestKey);
+    }
     retrievalCache.set(targetUrl, entry);
 
     return {
       success: true,
       title,
       markdown,
-      finalUrl: response.url,
+      finalUrl,
       characterCount: markdown.length,
       cached: false,
     };
   } catch (err: any) {
     clearTimeout(timeoutId);
+    if (err.name === "ResponseTooLargeError") {
+      return {
+        success: false,
+        title: "",
+        markdown: "",
+        finalUrl: targetUrl,
+        characterCount: 0,
+        cached: false,
+        error: err.message,
+        httpStatus: 413,
+      };
+    }
     if (err.name === "AbortError" || err.message?.includes("aborted")) {
       return {
         success: false,
@@ -323,7 +446,7 @@ export async function handleInvestigate(req: Request, res: Response) {
 
   try {
     let resolvedDocContent = typeof docContent === "string" ? docContent : undefined;
-    let trustedServerDocContent: string | undefined;
+    let trustedServerSource: TrustedSourceMetadata | undefined;
     let resolvedWebsiteUrl = typeof websiteUrl === "string" ? websiteUrl.trim() : undefined;
     const retrievalLogs: string[] = [];
     const evidenceLogs: string[] = [];
@@ -333,7 +456,11 @@ export async function handleInvestigate(req: Request, res: Response) {
       const retrieval = await fetchAndCleanDoc(resolvedWebsiteUrl);
       if (retrieval.success) {
         resolvedDocContent = retrieval.markdown;
-        trustedServerDocContent = retrieval.markdown;
+        trustedServerSource = {
+          text: retrieval.markdown,
+          url: retrieval.finalUrl,
+          title: retrieval.title,
+        };
         resolvedWebsiteUrl = retrieval.finalUrl;
         retrievalLogs.push(
           `[PROXY] Retrieved ${retrieval.title || "provider documentation"} from ${retrieval.finalUrl} (${retrieval.characterCount} characters${retrieval.cached ? ", cached" : ""}).`
@@ -360,7 +487,7 @@ export async function handleInvestigate(req: Request, res: Response) {
 
     let guide = result.guide;
     if (result.modeUsed !== "curated_fast_path") {
-      const evidenceCheck = enforceDocumentEvidence(result.guide, trustedServerDocContent);
+      const evidenceCheck = enforceDocumentEvidence(result.guide, trustedServerSource);
       guide = evidenceCheck.guide;
       if (evidenceCheck.downgradedCount > 0) {
         evidenceLogs.push(

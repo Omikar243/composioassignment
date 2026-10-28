@@ -164,6 +164,25 @@ describe("Milestone 2: Server Retrieval Proxy Suite", () => {
         global.fetch = originalFetch;
       }
     });
+
+    it("blocks a redirect hop that points to a private address", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 302,
+        headers: new Headers({ location: "http://127.0.0.1:8080/internal" }),
+        url: "https://acme.com/redirect",
+      } as any);
+
+      try {
+        const result = await fetchAndCleanDoc("https://acme.com/redirect");
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("Redirect target violated SSRF security guard");
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
   });
 
   describe("POST /api/investigate", () => {
