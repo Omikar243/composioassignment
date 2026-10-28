@@ -37,6 +37,13 @@ export const isIndependentlyTested = (e: ClaimEvidence): boolean => e.kind === "
 // 2. Concrete Auth Schemes vs Integration Path Classification
 export type ConcreteAuthScheme = "OAUTH2" | "OAUTH1" | "API_KEY" | "BEARER_TOKEN" | "BASIC_AUTH";
 
+/** Trusted catalog metadata used as the starting point for deterministic investigation. */
+export interface CatalogAuthBaseline {
+  authPath: AuthPathClassification;
+  supportedAuthSchemes: ConcreteAuthScheme[];
+  authDocUrl?: string;
+}
+
 export type AuthPathClassification =
   | "oauth_required" // Connecting requires registering/configuring an OAuth application
   | "hybrid_oauth_or_direct" // Supports public OAuth, but direct key/token works for single-account/internal use
@@ -169,6 +176,7 @@ export interface IntegrationReadinessGuide {
   appId: string;
   appName: string;
   websiteUrl: string;
+  authDocUrl?: string;
   composioToolkitSlug?: string;
   supportedAuthSchemes: Traceable<ConcreteAuthScheme[]>;
   composioManagedAuthStatus: Traceable<ManagedAuthAvailability>;
