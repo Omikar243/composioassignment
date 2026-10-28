@@ -448,7 +448,10 @@ export async function handleInvestigate(req: Request, res: Response) {
   try {
     let resolvedDocContent = typeof docContent === "string" ? docContent : undefined;
     let trustedServerSource: TrustedSourceMetadata | undefined;
-    let resolvedWebsiteUrl = typeof websiteUrl === "string" ? websiteUrl.trim() : undefined;
+    const targetDocUrl = (typeof catalogBaseline?.authDocUrl === "string" && catalogBaseline.authDocUrl.trim() !== "")
+      ? catalogBaseline.authDocUrl.trim()
+      : (typeof websiteUrl === "string" ? websiteUrl.trim() : undefined);
+    let resolvedWebsiteUrl = targetDocUrl;
     const retrievalLogs: string[] = [];
     const evidenceLogs: string[] = [];
 

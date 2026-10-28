@@ -263,6 +263,14 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
           >
             Calendly (OAuth)
           </button>
+          <button
+            onClick={() =>
+              applyPreset("Supabase", "https://supabase.com/docs/guides/getting-started/api-keys")
+            }
+            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition text-[11px]"
+          >
+            Supabase (Direct Key)
+          </button>
         </div>
 
         {/* Mode Selector and Launch Action */}

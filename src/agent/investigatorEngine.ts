@@ -19,6 +19,7 @@ import {
   HybridAuthSpec,
   ConcreteAuthScheme,
   AuthPathClassification,
+  CatalogBaseline,
   CatalogAuthBaseline,
   ManagedAuthAvailability,
   SetupStep,
@@ -322,7 +323,7 @@ export interface DynamicInvestigationInput {
   appName: string;
   websiteUrl?: string;
   docContent?: string;
-  catalogBaseline?: CatalogAuthBaseline;
+  catalogBaseline?: CatalogBaseline;
 }
 
 /**
@@ -1276,11 +1277,12 @@ export async function executeModeBAIAssisted(
   modeUsed: "heuristic_research" | "ai_assisted";
 }> {
   const logs: string[] = [];
+  const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
 
-  if (!groqKey && !openaiKey) {
-    logs.push("No GROQ_API_KEY or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
+  if (!geminiKey && !groqKey && !openaiKey) {
+    logs.push("No GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY detected in environment. Triggering deterministic Mode 2 fallback.");
     const guide = executeMode2Dynamic(input);
     return { guide, logs, modeUsed: "heuristic_research" };
   }
@@ -1290,6 +1292,38 @@ export async function executeModeBAIAssisted(
   try {
     // Attempt LLM generation if key is present
     const prompt = buildModeBPrompt(input);
+
+    if (geminiKey) {
+      const geminiModel = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
+      try {
+        logs.push(`Querying Google Gemini API (${geminiModel})...`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), COMPATIBLE_AI_REQUEST_TIMEOUT_MS);
+        const response = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" },
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (response.ok) {
+          const payload: any = await response.json();
+          const content = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (content) {
+            const guide = finalizeAiGuide(content, input, "openai_mode_b", logs);
+            if (guide) return { guide, logs, modeUsed: "ai_assisted" };
+          }
+        } else {
+          logs.push(`Gemini API returned HTTP ${response.status}.`);
+        }
+      } catch (err: any) {
+        logs.push(`Gemini request failed: ${err.message}. Trying next fallback.`);
+      }
+    }
 
     if (groqKey) {
       const groqResult = await requestOpenAICompatibleGuide(
@@ -1342,7 +1376,7 @@ export interface InvestigationRequest {
   appName: string;
   websiteUrl?: string;
   docContent?: string;
-  catalogBaseline?: CatalogAuthBaseline;
+  catalogBaseline?: CatalogBaseline;
   mode?: "deterministic" | "ai_assisted";
   forceMode?: "auto" | "curated_only" | "dynamic_only";
 }

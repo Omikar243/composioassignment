@@ -14,7 +14,11 @@ import {
   ConcreteAuthScheme,
   ManagedAuthAvailability,
   Traceable,
+  type CatalogBaseline,
+  type CatalogAuthBaseline,
 } from "../types/guide";
+
+export type { CatalogBaseline, CatalogAuthBaseline };
 
 export type CatalogCategory =
   | "Developer Tools"
