@@ -418,10 +418,10 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
                 onChange={(e) => setSelectedAuthPath(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500/60"
               >
-                <option value="all">All Auth Paths (100)</option>
-                <option value="oauth_required">OAuth Required (50)</option>
-                <option value="hybrid_oauth_or_direct">Hybrid Auth (25)</option>
-                <option value="direct_credential_only">Direct Key Only (25)</option>
+                <option value="all">All Auth Paths ({stats.totalApps})</option>
+                <option value="oauth_required">OAuth Required ({stats.byAuthPath.oauth_required})</option>
+                <option value="hybrid_oauth_or_direct">Hybrid Auth ({stats.byAuthPath.hybrid_oauth_or_direct})</option>
+                <option value="direct_credential_only">Direct Key Only ({stats.byAuthPath.direct_credential_only})</option>
               </select>
             </div>
 
