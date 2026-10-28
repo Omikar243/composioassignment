@@ -17,7 +17,8 @@ import {
   Clock,
 } from "lucide-react";
 import type { InvestigationResponse } from "../agent/investigatorEngine";
-import { IntegrationReadinessGuide } from "../types/guide";
+import { CatalogAuthBaseline, IntegrationReadinessGuide } from "../types/guide";
+import { CATALOG_100_APPS } from "../data/catalog100";
 import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 import { ExportEngine } from "./ExportEngine";
 import { InvestigationRationale } from "./InvestigationRationale";
@@ -26,12 +27,14 @@ import { resolveDocumentationSourceUrl } from "../utils/investigationInput";
 export interface LiveInvestigatorPanelProps {
   initialAppName?: string;
   initialWebsiteUrl?: string;
+  initialCatalogBaseline?: CatalogAuthBaseline;
   onOpenFullGuide: (guide: IntegrationReadinessGuide) => void;
 }
 
 export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
   initialAppName = "",
   initialWebsiteUrl = "",
+  initialCatalogBaseline,
   onOpenFullGuide,
 }) => {
   const [appInput, setAppInput] = useState(initialAppName);
@@ -89,7 +92,21 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
           }
         })()
       : appInput.trim();
-    const targetUrl = resolveDocumentationSourceUrl(appInput, urlInput);
+    const normalizedAppName = targetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const matchedCatalogApp = CATALOG_100_APPS.find((app) =>
+      [app.name, app.appName, app.id, app.appId].some((candidate) =>
+        candidate.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedAppName
+      )
+    );
+    const catalogBaseline: CatalogAuthBaseline | undefined = initialCatalogBaseline || (matchedCatalogApp
+      ? {
+          authPath: matchedCatalogApp.authPath,
+          supportedAuthSchemes: [...matchedCatalogApp.supportedAuthSchemes],
+          authDocUrl: matchedCatalogApp.authDocUrl,
+        }
+      : undefined);
+    const targetUrl = matchedCatalogApp?.authDocUrl || initialCatalogBaseline?.authDocUrl ||
+      resolveDocumentationSourceUrl(appInput, urlInput);
 
     setTerminalLogs([
       `[${timestamp}] [TRIAGE] Initializing live investigation for '${targetName}'...`,
@@ -118,7 +135,7 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
       const response = await fetch("/api/investigate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appName: targetName, websiteUrl: targetUrl, mode }),
+        body: JSON.stringify({ appName: targetName, websiteUrl: targetUrl, mode, catalogBaseline }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.success) {
