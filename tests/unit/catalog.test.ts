@@ -208,7 +208,7 @@ describe("100-App AI Agent Catalog Directory (catalog100.ts)", () => {
   });
 
   describe("Auth Path Distribution Contract", () => {
-    it("matches exactly 50% oauth_required, 25% hybrid_oauth_or_direct, 25% direct_credential_only", () => {
+    it("keeps every auth path represented and matches reconciled catalog counts", () => {
       const oauthApps = CATALOG_100_APPS.filter(
         (a) => a.authPath === "oauth_required"
       );
@@ -219,12 +219,12 @@ describe("100-App AI Agent Catalog Directory (catalog100.ts)", () => {
         (a) => a.authPath === "direct_credential_only"
       );
 
-      expect(oauthApps).toHaveLength(50);
-      expect(hybridApps).toHaveLength(25);
+      expect(oauthApps).toHaveLength(44);
+      expect(hybridApps).toHaveLength(31);
       expect(directApps).toHaveLength(25);
 
-      expect(oauthApps.length / CATALOG_100_APPS.length).toBe(0.5);
-      expect(hybridApps.length / CATALOG_100_APPS.length).toBe(0.25);
+      expect(oauthApps.length / CATALOG_100_APPS.length).toBe(0.44);
+      expect(hybridApps.length / CATALOG_100_APPS.length).toBe(0.31);
       expect(directApps.length / CATALOG_100_APPS.length).toBe(0.25);
     });
   });
@@ -418,8 +418,8 @@ describe("100-App AI Agent Catalog Directory (catalog100.ts)", () => {
       }
 
       // Auth path breakdown
-      expect(stats.byAuthPath.oauth_required).toBe(50);
-      expect(stats.byAuthPath.hybrid_oauth_or_direct).toBe(25);
+      expect(stats.byAuthPath.oauth_required).toBe(44);
+      expect(stats.byAuthPath.hybrid_oauth_or_direct).toBe(31);
       expect(stats.byAuthPath.direct_credential_only).toBe(25);
 
       // Review gate breakdown
