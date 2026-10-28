@@ -30,7 +30,7 @@ import { ClaimEvidenceBadge } from "./ClaimEvidenceBadge";
 
 export interface DirectoryViewProps {
   onSelectGuide: (guide: IntegrationReadinessGuide) => void;
-  onInvestigateApp: (appName: string, websiteUrl?: string) => void;
+  onInvestigateApp: (app: CatalogApp) => void;
 }
 
 export const DirectoryView: React.FC<DirectoryViewProps> = ({
@@ -109,7 +109,7 @@ export const DirectoryView: React.FC<DirectoryViewProps> = ({
       onSelectGuide(curated);
     } else {
       // Open in Live Investigator for dynamic research
-      onInvestigateApp(app.name, app.websiteUrl);
+      onInvestigateApp(app);
     }
   };
 
