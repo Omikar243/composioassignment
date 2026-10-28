@@ -176,6 +176,38 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
     return "text-slate-300";
   };
 
+  const renderAuthPathBadge = (classification: string) => {
+    switch (classification) {
+      case "oauth_required":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-950/70 text-purple-300 border border-purple-500/40">
+            <Lock className="w-3.5 h-3.5 text-purple-400" />
+            <span>OAuth Required</span>
+          </span>
+        );
+      case "hybrid_oauth_or_direct":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-500/40">
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Hybrid Auth</span>
+          </span>
+        );
+      case "direct_credential_only":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-950/70 text-teal-300 border border-teal-500/40">
+            <Key className="w-3.5 h-3.5 text-teal-400" />
+            <span>Direct Key Only</span>
+          </span>
+        );
+      default:
+        return (
+          <span className="font-mono font-bold text-sm text-cyan-300">
+            {classification}
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="investigator-page space-y-8 pb-16">
       {/* Header */}
@@ -423,9 +455,9 @@ export const LiveInvestigatorPanel: React.FC<LiveInvestigatorPanelProps> = ({
               <span className="text-xs text-slate-400 block mb-1">
                 Auth Path Classification
               </span>
-              <span className="font-mono font-bold text-sm text-cyan-300">
-                {investigationResult.guide.readinessSummary.authPathClassification}
-              </span>
+              <div className="mt-1">
+                {renderAuthPathBadge(investigationResult.guide.readinessSummary.authPathClassification)}
+              </div>
             </div>
 
             <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">

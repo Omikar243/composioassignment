@@ -70,7 +70,13 @@ export function generateGuideMarkdown(guide: IntegrationReadinessGuide): string 
   md += `## 1. Executive Readiness & Timeline Summary\n\n`;
   md += `| Attribute | Value | Epistemic Evidence Status |\n`;
   md += `| :--- | :--- | :--- |\n`;
-  md += `| **Auth Path Model** | \`${guide.readinessSummary.authPathClassification}\` | System Classification |\n`;
+  const authPathLabel =
+    guide.readinessSummary.authPathClassification === "oauth_required"
+      ? "OAuth Required"
+      : guide.readinessSummary.authPathClassification === "hybrid_oauth_or_direct"
+      ? "Hybrid Auth"
+      : "Direct Key Only";
+  md += `| **Auth Path Model** | **${authPathLabel}** (\`${guide.readinessSummary.authPathClassification}\`) | System Classification |\n`;
   md += `| **Active Setup Duration** | ${guide.readinessSummary.activeSetupTime.value} | ${formatEvidenceTag(guide.readinessSummary.activeSetupTime.evidence)} |\n`;
   md += `| **Approval Wait Duration** | ${guide.readinessSummary.approvalWaitTime.value} | ${formatEvidenceTag(guide.readinessSummary.approvalWaitTime.evidence)} |\n`;
   md += `| **Composio Managed Auth** | \`${guide.composioManagedAuthStatus.value}\` | ${formatEvidenceTag(guide.composioManagedAuthStatus.evidence)} |\n`;
