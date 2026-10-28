@@ -53,6 +53,7 @@ export interface CatalogApp {
   setupTimeEstimate: Traceable<string>;
   approvalWaitEstimate: Traceable<string>;
   websiteUrl: string;
+  authDocUrl?: string;
   composioToolkitSlug?: string;
   hasCuratedDeepGuide: boolean;
   keyNuanceOrPitfall: string;
@@ -3613,6 +3614,115 @@ export const CATALOG_100_APPS: CatalogApp[] = [
 // ============================================================================
 // Helper Functions: Filter, Search & Stats
 // ============================================================================
+
+
+/** Official provider auth/API documentation; prefer this over marketing homepages. */
+const AUTH_DOC_URLS: Record<string, string> = {
+  github: "https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-registration-of-github-apps",
+  gitlab: "https://docs.gitlab.com/api/rest/authentication/",
+  jira: "https://developer.atlassian.com/cloud/jira/platform/security-for-other-integrations/",
+  linear: "https://developers.linear.app/docs/oauth/authentication",
+  sentry: "https://docs.sentry.io/api/auth/",
+  datadog: "https://docs.datadoghq.com/account_management/api-app-keys/",
+  bitbucket: "https://developer.atlassian.com/cloud/bitbucket/rest/intro/#authentication",
+  circleci: "https://circleci.com/docs/api/v2/",
+  vercel: "https://vercel.com/docs/rest-api",
+  supabase: "https://supabase.com/docs/guides/getting-started/api-keys",
+  slack: "https://api.slack.com/authentication",
+  discord: "https://discord.com/developers/docs/topics/oauth2",
+  microsoft_teams: "https://learn.microsoft.com/en-us/graph/auth/",
+  zoom: "https://developers.zoom.us/docs/internal-apps/",
+  twilio: "https://www.twilio.com/docs/iam/api-keys",
+  sendgrid: "https://docs.sendgrid.com/for-developers/sending-email/api-getting-started",
+  telegram: "https://core.telegram.org/bots/api",
+  whatsapp_business: "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started",
+  intercom: "https://developers.intercom.com/docs/build-an-integration/learn-more/authentication",
+  pagerduty: "https://developer.pagerduty.com/docs/authorization",
+  notion: "https://developers.notion.com/docs/authorization",
+  google_workspace: "https://developers.google.com/identity/protocols/oauth2",
+  microsoft_365: "https://learn.microsoft.com/en-us/graph/auth/",
+  asana: "https://developers.asana.com/docs/oauth",
+  trello: "https://developer.atlassian.com/cloud/trello/guides/rest-api/authorization/",
+  clickup: "https://clickup.com/api",
+  monday: "https://developer.monday.com/api-reference/docs/authentication",
+  airtable: "https://support.airtable.com/docs/creating-and-using-api-keys-and-personal-access-tokens",
+  coda: "https://coda.io/developers/apis/v1",
+  todoist: "https://developer.todoist.com/guides/",
+  salesforce: "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_understanding_web_server_oauth_flow.htm",
+  hubspot: "https://developers.hubspot.com/docs/api/private-apps",
+  zendesk: "https://developer.zendesk.com/api-reference/introduction/security-and-auth/",
+  freshdesk: "https://developers.freshdesk.com/api/",
+  pipedrive: "https://developers.pipedrive.com/docs/api/v1",
+  zoho_crm: "https://www.zoho.com/crm/developer/docs/api/v7/authentication.html",
+  close: "https://developer.close.com/",
+  salesloft: "https://developers.salesloft.com/docs/api/",
+  apollo: "https://docs.apollo.io/",
+  outreach: "https://developers.outreach.io/",
+  openai: "https://platform.openai.com/docs/api-reference/authentication",
+  anthropic: "https://docs.anthropic.com/en/api/getting-started",
+  perplexity: "https://docs.perplexity.ai/guides/getting-started",
+  tavily: "https://docs.tavily.com/documentation/api-keys",
+  cohere: "https://docs.cohere.com/docs",
+  pinecone: "https://docs.pinecone.io/guides/projects/understanding-projects",
+  weaviate: "https://docs.weaviate.io/weaviate/configuration/authentication",
+  elevenlabs: "https://elevenlabs.io/docs/api-reference/authentication",
+  replicate: "https://replicate.com/docs/reference/http",
+  hugging_face: "https://huggingface.co/docs/api-inference/quicktour",
+  x_twitter: "https://developer.x.com/en/docs/authentication/oauth-2-0",
+  linkedin: "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authentication",
+  youtube: "https://developers.google.com/youtube/v3/guides/authentication",
+  facebook_meta: "https://developers.facebook.com/docs/facebook-login/guides/access-tokens",
+  instagram: "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login",
+  mailchimp: "https://mailchimp.com/developer/marketing/guides/access-user-data/",
+  buffer: "https://developers.buffer.com/",
+  hootsuite: "https://developer.hootsuite.com/docs/api/",
+  reddit: "https://www.reddit.com/dev/api/oauth",
+  tiktok: "https://developers.tiktok.com/doc/login-kit-web",
+  stripe: "https://docs.stripe.com/keys",
+  paypal: "https://developer.paypal.com/api/rest/",
+  quickbooks: "https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization",
+  xero: "https://developer.xero.com/documentation/guides/oauth2/overview/",
+  plaid: "https://plaid.com/docs/api/",
+  square: "https://developer.squareup.com/docs/build-basics/access-tokens",
+  brex: "https://developer.brex.com/docs",
+  ramp: "https://docs.ramp.com/developer-api",
+  mercury: "https://docs.mercury.com/reference/authentication",
+  wise: "https://docs.wise.com/api-docs/features/authentication",
+  google_drive: "https://developers.google.com/drive/api/guides/about-auth",
+  dropbox: "https://developers.dropbox.com/oauth-guide",
+  box: "https://developer.box.com/guides/authentication",
+  onedrive: "https://learn.microsoft.com/en-us/graph/auth/",
+  aws_s3: "https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html",
+  google_cloud_storage: "https://cloud.google.com/storage/docs/authentication",
+  cloudflare_r2: "https://developers.cloudflare.com/r2/api/s3/tokens/",
+  sharepoint: "https://learn.microsoft.com/en-us/graph/auth/",
+  egnyte: "https://developers.egnyte.com/docs/authentication",
+  backblaze: "https://www.backblaze.com/apidocs/b2-authorize-account",
+  shopify: "https://shopify.dev/docs/apps/auth",
+  woocommerce: "https://woocommerce.github.io/woocommerce-rest-api-docs/#authentication",
+  bigcommerce: "https://developer.bigcommerce.com/docs/start/authentication",
+  magento: "https://developer.adobe.com/commerce/webapi/get-started/authentication/",
+  amazon_seller_central: "https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api",
+  ebay: "https://developer.ebay.com/api-docs/static/oauth-authorization.html",
+  etsy: "https://developers.etsy.com/documentation/essentials/authentication",
+  stripe_billing: "https://docs.stripe.com/keys",
+  chargebee: "https://apidocs.chargebee.com/docs/api/auth",
+  square_online: "https://developer.squareup.com/docs/build-basics/access-tokens",
+  bamboohr: "https://documentation.bamboohr.com/docs",
+  workday: "https://developer.workday.com/",
+  gusto: "https://docs.gusto.com/app-integrations/docs/authentication",
+  rippling: "https://developer.rippling.com/",
+  deel: "https://developer.deel.com/docs/authentication",
+  greenhouse: "https://developers.greenhouse.io/harvest.html#authentication",
+  lever: "https://hire.lever.co/developer/documentation",
+  personio: "https://developer.personio.de/",
+  adp: "https://developers.adp.com/articles/api/authentication",
+  justworks: "https://developers.justworks.com/"
+};
+for (const app of CATALOG_100_APPS) {
+  const authDocUrl = AUTH_DOC_URLS[app.id];
+  if (authDocUrl) app.authDocUrl = authDocUrl;
+}
 
 export interface CatalogFilters {
   category?: CatalogCategory | "All";
